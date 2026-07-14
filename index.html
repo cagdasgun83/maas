@@ -1515,6 +1515,61 @@ input[type="number"]::-webkit-inner-spin-button {
   input, select, textarea { font-size: 16px !important; }
   .btn { min-height: 40px; }
 }
+
+/* ===== v5.2 — Mobil sığdırma iyileştirmeleri ===== */
+@media (max-width: 768px) {
+  /* Tablolar: yatay kaydırılabilir, satırlar kırpılmaz */
+  #mode-budget table, #mode-portfolio table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  .port-table th, .port-table td,
+  .history-table th, .history-table td {
+    white-space: nowrap;
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+
+  /* Alt sekme çubukları: sığmıyorsa yana kaydır */
+  .port-subtabs, .bucket-tab {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+    flex-wrap: nowrap;
+  }
+
+  /* Kart başlığı: dar ekranda sıkışık boşluk */
+  .card-header { gap: 8px !important; padding: 10px !important; }
+
+  /* Harcama satırı: kategori + tutar + sil; not alta tam satır */
+  .mob-spend-row { grid-template-columns: 1.4fr 1fr 34px !important; }
+  .mob-spend-row [data-k="spend-note"] { grid-column: 1 / -1; }
+
+  /* Taksit satırı: 2 sütuna yeniden dizilim */
+  .mob-inst-row { grid-template-columns: 1fr 1fr !important; row-gap: 8px !important; }
+  .mob-inst-row [data-k="label"] { grid-column: 1 / -1; }
+  .mob-inst-row [data-inst-info] { white-space: normal !important; }
+
+  /* Kredi detayı: 4 sütun → 2 sütun */
+  .mob-loan-detail { grid-template-columns: 1fr 1fr !important; }
+
+  /* 12 aylık gelir ızgarası: 6 → 3 sütun */
+  #income-12mo-grid { grid-template-columns: repeat(3, 1fr) !important; }
+
+  /* Satır içi 4'lü ızgaralar (BES/tampon/emtia blokları): 2 sütun */
+  #mode-budget div[style*="repeat(4,1fr)"] { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Ay çubuğu ve başlık aksiyonları taşarsa alt satıra insin */
+  .month-bar { flex-wrap: wrap; row-gap: 8px; }
+  .header-actions { flex-wrap: wrap; row-gap: 8px; }
+
+  /* İşlem formu (Portföy → İşlem defteri): tarih/not tam satır */
+  .tx-form { grid-template-columns: 1fr 1fr !important; }
+  .tx-form button { grid-column: 1 / -1; }
+}
 </style>
 </head>
 <body data-theme="light">
@@ -3177,7 +3232,7 @@ function renderCards() {
           const catOptions = SPEND_CATEGORIES.map(c =>
             '<option value="' + escapeHtml(c) + '"' + (sp.category === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'
           ).join('');
-          html += '<div style="display:grid;grid-template-columns:1.3fr 0.9fr 1.3fr auto;gap:6px;align-items:center;font-size:12px;">';
+          html += '<div class="mob-spend-row" style="display:grid;grid-template-columns:1.3fr 0.9fr 1.3fr auto;gap:6px;align-items:center;font-size:12px;">';
           html += '<select data-ci="' + ci + '" data-si="' + si + '" data-k="spend-cat" style="font-size:12px;padding:5px 8px;">' + catOptions + '</select>';
           html += '<input type="text" inputmode="decimal" placeholder="0" value="' + (sp.amount || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-amount" data-calc="1" style="font-size:12px;padding:5px 8px;text-align:right;font-family:var(--font-mono);">';
           html += '<input type="text" placeholder="Not (opsiyonel)" value="' + escapeHtml(sp.note || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-note" style="font-size:12px;padding:5px 8px;">';
@@ -3209,7 +3264,7 @@ function renderCards() {
           const instCatOptions = SPEND_CATEGORIES.map(c =>
             '<option value="' + escapeHtml(c) + '"' + ((inst.category || 'Diğer') === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'
           ).join('');
-          html += '<div style="display:grid;grid-template-columns:1.3fr 0.9fr 0.8fr 0.5fr 1fr auto auto;gap:6px;align-items:center;font-size:12px;">';
+          html += '<div class="mob-inst-row" style="display:grid;grid-template-columns:1.3fr 0.9fr 0.8fr 0.5fr 1fr auto auto;gap:6px;align-items:center;font-size:12px;">';
           html += '<input type="text" placeholder="Açıklama (örn. iPhone)" value="' + escapeHtml(inst.label || '') + '" data-ci="' + ci + '" data-ii="' + ii + '" data-k="label" style="font-size:12px;padding:5px 8px;">';
           html += '<select data-ci="' + ci + '" data-ii="' + ii + '" data-k="category" style="font-size:12px;padding:5px 8px;">' + instCatOptions + '</select>';
           html += '<input type="number" min="0" step="100" placeholder="Toplam" value="' + (inst.amount || '') + '" data-ci="' + ci + '" data-ii="' + ii + '" data-k="amount" style="font-size:12px;padding:5px 8px;">';
@@ -3602,7 +3657,7 @@ function renderLoans() {
 
     // DETAY (collapsible)
     if (isExpanded) {
-      html += '<div style="padding:14px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:end;">';
+      html += '<div class="mob-loan-detail" style="padding:14px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:end;">';
       html += '<div><label class="field-label">Kredi adı</label><input type="text" placeholder="örn. Ev kredisi" value="' + escapeHtml(loan.name || '') + '" data-li="' + li + '" data-k="name" style="' + (loanPaid ? 'text-decoration:line-through;' : '') + '"></div>';
       html += '<div><label class="field-label">Aylık taksit</label><input type="number" min="0" step="50" placeholder="0" value="' + (loan.monthlyPayment || '') + '" data-li="' + li + '" data-k="monthlyPayment"></div>';
       html += '<div><label class="field-label">Başlangıç ayı</label><input type="month" value="' + (loan.startMonth || '') + '" data-li="' + li + '" data-k="startMonth"></div>';
