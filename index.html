@@ -2470,6 +2470,9 @@ function updateThemeIcon(theme) {
 }
 
 // ---------- IndexedDB ----------
+// iOS Safari, uygulama arka plana alınınca (ör. dosya seçici veya paylaşım menüsü açılınca)
+// IndexedDB bağlantısını kapatabilir. Bu yüzden her işlemde bağlantı kontrol edilir,
+// kapanmışsa yeniden açılıp işlem tekrarlanır.
 let db;
 const DB_NAME = 'maasGunuDB', STORE = 'months', VERSION = 1;
 
@@ -2482,37 +2485,68 @@ function openDB() {
         d.createObjectStore(STORE, { keyPath: 'id' });
       }
     };
-    req.onsuccess = e => { db = e.target.result; resolve(); };
+    req.onsuccess = e => {
+      db = e.target.result;
+      db.onclose = () => { db = null; }; // iOS bağlantıyı kapatırsa işaretle
+      resolve();
+    };
     req.onerror = e => reject(e);
   });
 }
-function dbAll() {
-  return new Promise(resolve => {
-    const tx = db.transaction(STORE, 'readonly').objectStore(STORE).getAll();
-    tx.onsuccess = () => resolve(tx.result || []);
-    tx.onerror = () => resolve([]);
-  });
+
+// Geçerli bir bağlantı üzerinde transaction başlatır; bağlantı kapalıysa yeniden açar.
+async function dbTx(mode) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!db) await openDB();
+    try {
+      return db.transaction(STORE, mode).objectStore(STORE);
+    } catch (err) {
+      // "The database connection is closing" → InvalidStateError: yeniden aç ve tekrar dene
+      db = null;
+      if (attempt === 1) throw err;
+    }
+  }
 }
-function dbPut(rec) {
-  return new Promise(resolve => {
-    const tx = db.transaction(STORE, 'readwrite').objectStore(STORE).put(rec);
-    tx.onsuccess = () => resolve();
-    tx.onerror = () => resolve();
-  });
+
+async function dbAll() {
+  try {
+    const store = await dbTx('readonly');
+    return await new Promise(resolve => {
+      const rq = store.getAll();
+      rq.onsuccess = () => resolve(rq.result || []);
+      rq.onerror = () => resolve([]);
+    });
+  } catch (e) { console.error('dbAll:', e); return []; }
 }
-function dbDel(id) {
-  return new Promise(resolve => {
-    const tx = db.transaction(STORE, 'readwrite').objectStore(STORE).delete(id);
-    tx.onsuccess = () => resolve();
-    tx.onerror = () => resolve();
-  });
+async function dbPut(rec) {
+  try {
+    const store = await dbTx('readwrite');
+    return await new Promise(resolve => {
+      const rq = store.put(rec);
+      rq.onsuccess = () => resolve();
+      rq.onerror = () => resolve();
+    });
+  } catch (e) { console.error('dbPut:', e); }
 }
-function dbClear() {
-  return new Promise(resolve => {
-    const tx = db.transaction(STORE, 'readwrite').objectStore(STORE).clear();
-    tx.onsuccess = () => resolve();
-    tx.onerror = () => resolve();
-  });
+async function dbDel(id) {
+  try {
+    const store = await dbTx('readwrite');
+    return await new Promise(resolve => {
+      const rq = store.delete(id);
+      rq.onsuccess = () => resolve();
+      rq.onerror = () => resolve();
+    });
+  } catch (e) { console.error('dbDel:', e); }
+}
+async function dbClear() {
+  try {
+    const store = await dbTx('readwrite');
+    return await new Promise(resolve => {
+      const rq = store.clear();
+      rq.onsuccess = () => resolve();
+      rq.onerror = () => resolve();
+    });
+  } catch (e) { console.error('dbClear:', e); }
 }
 
 // ---------- State ----------
@@ -2529,8 +2563,9 @@ let debtsState = {
 const DEBTS_DB_KEY = 'debts_state';
 
 async function loadDebts() {
+  const store = await dbTx('readonly');
   return new Promise(resolve => {
-    const tx = db.transaction(STORE, 'readonly').objectStore(STORE).get(DEBTS_DB_KEY);
+    const tx = store.get(DEBTS_DB_KEY);
     tx.onsuccess = () => {
       if (tx.result && tx.result.data) {
         debtsState = { ...debtsState, ...tx.result.data };
@@ -2670,12 +2705,11 @@ function updateKalanBakiye() {
 let debtsSaveTimer;
 function saveDebts() {
   clearTimeout(debtsSaveTimer);
-  debtsSaveTimer = setTimeout(() => {
-    if (!db) return;
-    db.transaction(STORE, 'readwrite').objectStore(STORE).put({
-      id: DEBTS_DB_KEY,
-      data: debtsState
-    });
+  debtsSaveTimer = setTimeout(async () => {
+    try {
+      const store = await dbTx('readwrite');
+      store.put({ id: DEBTS_DB_KEY, data: debtsState });
+    } catch (e) { console.error('saveDebts:', e); }
   }, 250);
 }
 
@@ -5353,8 +5387,9 @@ let editingTxId = null; // İşlem düzenleme modu için aktif tx ID
 const P_DB_KEY = 'portfolio_state';
 
 async function loadPortfolio() {
+  const store = await dbTx('readonly');
   return new Promise(resolve => {
-    const tx = db.transaction(STORE, 'readonly').objectStore(STORE).get(P_DB_KEY);
+    const tx = store.get(P_DB_KEY);
     tx.onsuccess = () => {
       if (tx.result && tx.result.data) {
         try {
@@ -5407,9 +5442,11 @@ async function loadPortfolio() {
 let pSaveTimer;
 function pSave() {
   clearTimeout(pSaveTimer);
-  pSaveTimer = setTimeout(() => {
-    if (!db) return;
-    db.transaction(STORE, 'readwrite').objectStore(STORE).put({
+  pSaveTimer = setTimeout(async () => {
+    let store;
+    try { store = await dbTx('readwrite'); }
+    catch (e) { console.error('pSave:', e); return; }
+    store.put({
       id: P_DB_KEY,
       data: {
         rates: pState.rates,
