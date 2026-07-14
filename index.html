@@ -1527,6 +1527,7 @@ input[type="number"]::-webkit-inner-spin-button {
       <span class="brand-eyebrow">Kişisel Finans · Bütçe & Portföy</span>
       <h1 class="brand-title">Maaş <em>Günü</em></h1>
       <span class="backup-info" id="backup-info"></span>
+      <span class="backup-info" id="sync-info"></span>
     </div>
     <div class="header-actions">
       <div class="mode-switch" role="tablist" aria-label="Mod seçimi">
@@ -1544,6 +1545,10 @@ input[type="number"]::-webkit-inner-spin-button {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20V8m0 0l-4 4m4-4l4 4M4 4h16"/></svg>
         Excel'den al
       </button>
+      <button class="btn" id="btn-sync" title="Cihazlar arası eşitleme">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.5 19a4.5 4.5 0 100-9 6 6 0 00-11.3 1.6A4 4 0 006.5 19h11z"/></svg>
+        Eşitle
+      </button>
       <input type="file" id="file-input" accept=".xlsx,.xls">
     </div>
   </header>
@@ -1557,6 +1562,10 @@ input[type="number"]::-webkit-inner-spin-button {
     <button class="bnav-btn" data-bnav="portfolio">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V9m5 10V5m5 14v-7m5 7V11"/></svg>
       Portföy
+    </button>
+    <button class="bnav-btn" id="bnav-sync">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.5 19a4.5 4.5 0 100-9 6 6 0 00-11.3 1.6A4 4 0 006.5 19h11z"/></svg>
+      Eşitle
     </button>
     <button class="bnav-btn" id="bnav-backup">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>
@@ -2378,6 +2387,44 @@ input[type="number"]::-webkit-inner-spin-button {
 
 <div class="toast" id="toast"></div>
 
+<!-- v5.1: Eşitleme (GitHub Gist) modalı -->
+<div class="modal-bg" id="modal-sync">
+  <div class="modal" style="max-width:520px;">
+    <h3>Cihazlar arası eşitleme</h3>
+
+    <div id="sync-setup">
+      <p>Verileriniz, GitHub hesabınızdaki <b>gizli bir Gist</b>'e kaydedilir ve diğer cihazlarınız oradan okur. Veriler GitHub Pages'teki uygulama dosyasına <b>yazılmaz</b>; yalnızca sizin erişebildiğiniz gizli alanda durur.</p>
+      <label class="field-label">GitHub erişim anahtarı (token)</label>
+      <input type="password" id="sync-token" placeholder="ghp_... veya github_pat_..." autocomplete="off" style="margin-bottom:6px;">
+      <p style="font-size:12px;margin-bottom:10px;">Anahtar oluşturmak için: <b>github.com → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token</b>. Sadece <b>gist</b> kutusunu işaretleyin, başka yetki vermeyin. Anahtar yalnızca bu cihazın tarayıcısında saklanır.</p>
+      <label class="field-label">Şifreleme parolası (önerilir)</label>
+      <input type="password" id="sync-pass" placeholder="Her cihazda aynı parolayı girin" autocomplete="off" style="margin-bottom:6px;">
+      <p style="font-size:12px;margin-bottom:10px;">Doldurursanız verileriniz GitHub'a gitmeden önce cihazda şifrelenir (AES-256). Boş bırakılırsa veriler gizli Gist'te düz metin durur.</p>
+      <div class="modal-actions">
+        <button class="btn" id="sync-cancel">Vazgeç</button>
+        <button class="btn btn-primary" id="sync-connect">Bağlan</button>
+      </div>
+    </div>
+
+    <div id="sync-panel" style="display:none;">
+      <p id="sync-status" style="margin-bottom:12px;"></p>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:14px;cursor:pointer;">
+        <input type="checkbox" id="sync-auto" style="width:auto;">
+        Otomatik eşitle (açılışta buluttan al, değişiklikten sonra buluta gönder)
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+        <button class="btn btn-primary" id="sync-push">⬆ Gönder (bu cihaz → bulut)</button>
+        <button class="btn btn-primary" id="sync-pull">⬇ Al (bulut → bu cihaz)</button>
+      </div>
+      <p style="font-size:12px;">İlk kurulumda: verinin güncel olduğu cihazda <b>Gönder</b>, diğer cihazda <b>Al</b> kullanın. "Al" bu cihazdaki mevcut verilerin üzerine yazar.</p>
+      <div class="modal-actions">
+        <button class="btn" id="sync-disconnect" style="color:var(--danger-text);">Bağlantıyı kes</button>
+        <button class="btn" id="sync-close">Kapat</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>/* Chart.js 4.4.1 — gömülü (çevrimdışı çalışır) */
 /*!
  * Chart.js v4.4.1
@@ -2519,6 +2566,7 @@ async function dbAll() {
   } catch (e) { console.error('dbAll:', e); return []; }
 }
 async function dbPut(rec) {
+  markSyncDirty();
   try {
     const store = await dbTx('readwrite');
     return await new Promise(resolve => {
@@ -2529,6 +2577,7 @@ async function dbPut(rec) {
   } catch (e) { console.error('dbPut:', e); }
 }
 async function dbDel(id) {
+  markSyncDirty();
   try {
     const store = await dbTx('readwrite');
     return await new Promise(resolve => {
@@ -2539,6 +2588,7 @@ async function dbDel(id) {
   } catch (e) { console.error('dbDel:', e); }
 }
 async function dbClear() {
+  markSyncDirty();
   try {
     const store = await dbTx('readwrite');
     return await new Promise(resolve => {
@@ -2706,6 +2756,7 @@ let debtsSaveTimer;
 function saveDebts() {
   clearTimeout(debtsSaveTimer);
   debtsSaveTimer = setTimeout(async () => {
+    markSyncDirty();
     try {
       const store = await dbTx('readwrite');
       store.put({ id: DEBTS_DB_KEY, data: debtsState });
@@ -5443,6 +5494,7 @@ let pSaveTimer;
 function pSave() {
   clearTimeout(pSaveTimer);
   pSaveTimer = setTimeout(async () => {
+    markSyncDirty();
     let store;
     try { store = await dbTx('readwrite'); }
     catch (e) { console.error('pSave:', e); return; }
@@ -7194,6 +7246,34 @@ function attachPortfolioInputs() {
   if (bnavBackup) bnavBackup.onclick = exportToExcel;
   renderBackupInfo();
 
+  // ===== v5.1: eşitleme kabloları =====
+  document.getElementById('btn-sync').onclick = openSyncModal;
+  document.getElementById('bnav-sync').onclick = quickSync;
+  document.getElementById('sync-cancel').onclick = closeSyncModal;
+  document.getElementById('sync-close').onclick = closeSyncModal;
+  document.getElementById('sync-connect').onclick = connectSync;
+  document.getElementById('sync-push').onclick = () => { closeSyncModal(); pushSync(false); };
+  document.getElementById('sync-pull').onclick = () => {
+    if (confirm('Buluttaki veri, bu cihazdaki mevcut verilerin ÜZERİNE yazılacak. Devam edilsin mi?')) {
+      closeSyncModal(); pullSync(false);
+    }
+  };
+  document.getElementById('sync-auto').onchange = (e) => { syncCfg.auto = e.target.checked; };
+  document.getElementById('sync-disconnect').onclick = () => {
+    if (confirm('Eşitleme bağlantısı kesilsin mi? Buluttaki veriler silinmez; yalnızca bu cihazdaki anahtar kaldırılır.')) {
+      syncCfg.token = ''; syncCfg.pass = ''; syncCfg.gist = '';
+      localStorage.removeItem('mg-sync-last');
+      renderSyncInfo(); closeSyncModal();
+    }
+  };
+  if (localStorage.getItem('mg-sync-pulled-toast')) {
+    localStorage.removeItem('mg-sync-pulled-toast');
+    showToast('Buluttan güncellendi');
+  }
+  appReady = true;
+  renderSyncInfo();
+  autoStartupSync();
+
   // Service worker: yalnızca http(s) üzerinden servis edilirken kayıt olur
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW kaydı başarısız:', err));
@@ -7211,6 +7291,308 @@ function renderBackupInfo() {
   el.textContent = 'Son yedek: ' + dateStr + (days === 0 ? ' (bugün)' : ' (' + days + ' gün önce)');
   el.style.color = days >= 30 ? 'var(--danger-text)' : (days >= 14 ? 'var(--warning-text)' : 'var(--text-tertiary)');
 }
+
+// ===== v5.1: Cihazlar arası eşitleme (GitHub gizli Gist) =====
+// Veriler kullanıcının GitHub hesabındaki gizli bir Gist'te tutulur.
+// İsteğe bağlı: buluta gitmeden önce cihazda AES-256-GCM ile şifrelenir.
+const SYNC_FILE = 'maas-gunu-sync.json';
+let syncPushTimer = null;
+let syncApplying = false;   // pull sırasında yapılan yazmalar "değişiklik" sayılmasın
+let appReady = false;       // açılıştaki ilk yazmalar "değişiklik" sayılmasın
+
+const syncCfg = {
+  get token() { return localStorage.getItem('mg-sync-token') || ''; },
+  set token(v) { v ? localStorage.setItem('mg-sync-token', v) : localStorage.removeItem('mg-sync-token'); },
+  get gist() { return localStorage.getItem('mg-sync-gist') || ''; },
+  set gist(v) { v ? localStorage.setItem('mg-sync-gist', v) : localStorage.removeItem('mg-sync-gist'); },
+  get pass() { return localStorage.getItem('mg-sync-pass') || ''; },
+  set pass(v) { v ? localStorage.setItem('mg-sync-pass', v) : localStorage.removeItem('mg-sync-pass'); },
+  get auto() { return localStorage.getItem('mg-sync-auto') !== '0'; },
+  set auto(v) { localStorage.setItem('mg-sync-auto', v ? '1' : '0'); },
+  get last() { return localStorage.getItem('mg-sync-last') || ''; },        // buluttaki son bilinen sürüm
+  set last(v) { localStorage.setItem('mg-sync-last', v); },
+  get localTs() { return localStorage.getItem('mg-sync-local-ts') || ''; }, // bu cihazdaki son değişiklik
+  set localTs(v) { localStorage.setItem('mg-sync-local-ts', v); }
+};
+
+function markSyncDirty() {
+  if (syncApplying || !appReady) return;
+  syncCfg.localTs = new Date().toISOString();
+  renderSyncInfo();
+  if (syncCfg.token && syncCfg.auto && navigator.onLine) {
+    clearTimeout(syncPushTimer);
+    syncPushTimer = setTimeout(() => pushSync(true), 5000);
+  }
+}
+
+function ghHeaders() {
+  return {
+    'Authorization': 'Bearer ' + syncCfg.token,
+    'Accept': 'application/vnd.github+json',
+    'Content-Type': 'application/json'
+  };
+}
+async function ghFetch(url, opts = {}) {
+  const res = await fetch(url, { ...opts, headers: { ...ghHeaders(), ...(opts.headers || {}) } });
+  if (res.status === 401) throw new Error('Anahtar geçersiz veya süresi dolmuş');
+  if (res.status === 403) throw new Error('Erişim reddedildi — anahtarda "gist" yetkisi olduğundan emin olun');
+  return res;
+}
+
+// ---- Şifreleme (WebCrypto: PBKDF2 + AES-256-GCM) ----
+const _te = new TextEncoder(), _td = new TextDecoder();
+function bufToB64(buf) {
+  const u = new Uint8Array(buf); let s = ''; const CH = 0x8000;
+  for (let i = 0; i < u.length; i += CH) s += String.fromCharCode.apply(null, u.subarray(i, i + CH));
+  return btoa(s);
+}
+function b64ToBuf(s) {
+  const bin = atob(s); const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+async function deriveKey(pass, salt) {
+  const km = await crypto.subtle.importKey('raw', _te.encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+    km, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function encryptStr(plain, pass) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(pass, salt);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, _te.encode(plain));
+  return JSON.stringify({ enc: 1, salt: bufToB64(salt), iv: bufToB64(iv), data: bufToB64(ct) });
+}
+async function decryptStr(obj, pass) {
+  const key = await deriveKey(pass, b64ToBuf(obj.salt));
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBuf(obj.iv) }, key, b64ToBuf(obj.data));
+  return _td.decode(pt);
+}
+
+// ---- Gist işlemleri ----
+async function findOrCreateGist() {
+  if (syncCfg.gist) {
+    const r = await ghFetch('https://api.github.com/gists/' + syncCfg.gist);
+    if (r.ok) return syncCfg.gist;
+    syncCfg.gist = ''; // silinmiş olabilir — yeniden bul/oluştur
+  }
+  const listRes = await ghFetch('https://api.github.com/gists?per_page=100');
+  if (!listRes.ok) throw new Error('Gist listesi alınamadı: ' + listRes.status);
+  const list = await listRes.json();
+  const hit = (list || []).find(g => g.files && g.files[SYNC_FILE]);
+  if (hit) { syncCfg.gist = hit.id; return hit.id; }
+  const createRes = await ghFetch('https://api.github.com/gists', {
+    method: 'POST',
+    body: JSON.stringify({
+      description: 'Maaş Günü — cihazlar arası senkron verisi (uygulama yönetir)',
+      public: false,
+      files: { [SYNC_FILE]: { content: JSON.stringify({ app: 'maas-gunu', empty: true }) } }
+    })
+  });
+  const created = await createRes.json();
+  if (!created.id) throw new Error('Gizli Gist oluşturulamadı');
+  syncCfg.gist = created.id;
+  return created.id;
+}
+
+async function collectPayload() {
+  return {
+    app: 'maas-gunu',
+    v: '5.1',
+    updatedAt: new Date().toISOString(),
+    records: await dbAll()
+  };
+}
+
+async function fetchRemotePayload() {
+  const id = await findOrCreateGist();
+  const res = await ghFetch('https://api.github.com/gists/' + id);
+  if (!res.ok) throw new Error('Bulut verisi alınamadı: ' + res.status);
+  const g = await res.json();
+  const f = g.files && g.files[SYNC_FILE];
+  if (!f) return null;
+  let content = f.content;
+  if (f.truncated) content = await (await fetch(f.raw_url)).text();
+  let obj;
+  try { obj = JSON.parse(content); } catch (e) { throw new Error('Bulut verisi okunamadı'); }
+  if (obj && obj.enc) {
+    if (!syncCfg.pass) throw new Error('Bulut verisi şifreli — Eşitle ayarlarına şifreleme parolasını girin');
+    try { obj = JSON.parse(await decryptStr(obj, syncCfg.pass)); }
+    catch (e) { throw new Error('Şifre çözülemedi — parola diğer cihazdakiyle aynı olmalı'); }
+  }
+  if (!obj || obj.empty || !Array.isArray(obj.records)) return null;
+  return obj;
+}
+
+async function pushSync(silent) {
+  if (!syncCfg.token) return;
+  try {
+    setSyncInfo('gönderiliyor…');
+    const id = await findOrCreateGist();
+    const payload = await collectPayload();
+    let content = JSON.stringify(payload);
+    if (syncCfg.pass) content = await encryptStr(content, syncCfg.pass);
+    const r = await ghFetch('https://api.github.com/gists/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({ files: { [SYNC_FILE]: { content } } })
+    });
+    if (!r.ok) throw new Error('Gönderilemedi: ' + r.status);
+    clearTimeout(syncPushTimer);
+    syncCfg.last = payload.updatedAt;
+    syncCfg.localTs = payload.updatedAt;
+    renderSyncInfo();
+    if (!silent) showToast('Buluta gönderildi');
+  } catch (err) {
+    console.error('pushSync:', err);
+    renderSyncInfo(err.message);
+    if (!silent) alert('Eşitleme hatası: ' + err.message);
+  }
+}
+
+async function applyPayload(p) {
+  syncApplying = true;
+  try {
+    await dbClear();
+    for (const rec of (p.records || [])) {
+      if (rec && rec.id) await dbPut(rec);
+    }
+    syncCfg.last = p.updatedAt || new Date().toISOString();
+    syncCfg.localTs = syncCfg.last;
+    localStorage.setItem('mg-sync-pulled-toast', '1');
+  } finally {
+    syncApplying = false;
+  }
+  location.reload(); // bellek içi durumun tamamen temiz yüklenmesi için
+}
+
+async function pullSync(silent) {
+  if (!syncCfg.token) return;
+  try {
+    setSyncInfo('alınıyor…');
+    const p = await fetchRemotePayload();
+    if (!p) {
+      renderSyncInfo();
+      if (!silent) showToast('Bulutta veri yok — önce güncel cihazdan Gönder');
+      return;
+    }
+    await applyPayload(p);
+  } catch (err) {
+    console.error('pullSync:', err);
+    renderSyncInfo(err.message);
+    if (!silent) alert('Eşitleme hatası: ' + err.message);
+  }
+}
+
+// Açılışta: bulut daha yeniyse al; bu cihaz daha yeniyse gönder
+async function autoStartupSync() {
+  if (!syncCfg.token) { renderSyncInfo(); return; }
+  if (!syncCfg.auto || !navigator.onLine) { renderSyncInfo(); return; }
+  try {
+    const p = await fetchRemotePayload();
+    if (!p) { renderSyncInfo(); return; }
+    const remote = p.updatedAt || '';
+    const local = syncCfg.localTs || syncCfg.last || '';
+    if (remote && remote > local) { await applyPayload(p); return; }
+    if ((syncCfg.localTs || '') > (syncCfg.last || '')) { await pushSync(true); }
+    else renderSyncInfo();
+  } catch (err) {
+    console.warn('autoStartupSync:', err);
+    renderSyncInfo(err.message);
+  }
+}
+
+// Alt çubuktaki Eşitle: kuruluysa akıllı iki yönlü eşitleme, değilse ayarları aç
+async function quickSync() {
+  if (!syncCfg.token) { openSyncModal(); return; }
+  if (!navigator.onLine) { showToast('Çevrimdışısınız — bağlantı gelince tekrar deneyin'); return; }
+  try {
+    setSyncInfo('kontrol ediliyor…');
+    const p = await fetchRemotePayload();
+    const remote = p ? (p.updatedAt || '') : '';
+    const local = syncCfg.localTs || '';
+    if (remote && remote > local) { showToast('Buluttan güncelleniyor…'); await applyPayload(p); return; }
+    if (local > (syncCfg.last || '')) { await pushSync(false); return; }
+    renderSyncInfo();
+    showToast('Zaten güncel');
+  } catch (err) {
+    renderSyncInfo(err.message);
+    alert('Eşitleme hatası: ' + err.message);
+  }
+}
+
+function setSyncInfo(t) {
+  const el = document.getElementById('sync-info');
+  if (el) { el.textContent = 'Eşitleme: ' + t; el.style.color = 'var(--text-tertiary)'; }
+}
+function renderSyncInfo(err) {
+  const el = document.getElementById('sync-info');
+  if (!el) return;
+  if (!syncCfg.token) { el.textContent = ''; return; }
+  if (err) { el.textContent = 'Eşitleme hatası: ' + err; el.style.color = 'var(--danger-text)'; return; }
+  const dirty = syncCfg.localTs && syncCfg.localTs > (syncCfg.last || '');
+  if (dirty) {
+    el.textContent = 'Eşitleme: gönderilmemiş değişiklik var';
+    el.style.color = 'var(--warning-text)';
+  } else if (syncCfg.last) {
+    el.textContent = 'Eşitleme: güncel · ' + new Date(syncCfg.last).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    el.style.color = 'var(--text-tertiary)';
+  } else {
+    el.textContent = 'Eşitleme: bağlı — ilk gönderim bekleniyor';
+    el.style.color = 'var(--text-tertiary)';
+  }
+}
+
+// ---- Eşitleme modalı ----
+function openSyncModal() {
+  const setup = document.getElementById('sync-setup');
+  const panel = document.getElementById('sync-panel');
+  const connected = !!syncCfg.token;
+  setup.style.display = connected ? 'none' : 'block';
+  panel.style.display = connected ? 'block' : 'none';
+  if (connected) {
+    document.getElementById('sync-auto').checked = syncCfg.auto;
+    document.getElementById('sync-status').textContent =
+      'Bağlı ✓' + (syncCfg.pass ? ' · Şifreleme açık (AES-256)' : ' · Şifreleme kapalı') +
+      (syncCfg.last ? ' · Son eşitleme: ' + new Date(syncCfg.last).toLocaleString('tr-TR') : '');
+  }
+  document.getElementById('modal-sync').classList.add('active');
+}
+function closeSyncModal() {
+  document.getElementById('modal-sync').classList.remove('active');
+}
+async function connectSync() {
+  const t = document.getElementById('sync-token').value.trim();
+  if (!t) { alert('Lütfen GitHub erişim anahtarını girin'); return; }
+  const btn = document.getElementById('sync-connect');
+  btn.disabled = true; btn.textContent = 'Bağlanıyor…';
+  try {
+    const r = await fetch('https://api.github.com/user', {
+      headers: { 'Authorization': 'Bearer ' + t, 'Accept': 'application/vnd.github+json' }
+    });
+    if (!r.ok) throw new Error(r.status === 401 ? 'Anahtar geçersiz' : 'GitHub hatası: ' + r.status);
+    const u = await r.json();
+    syncCfg.token = t;
+    syncCfg.pass = document.getElementById('sync-pass').value;
+    await findOrCreateGist();
+    document.getElementById('sync-token').value = '';
+    document.getElementById('sync-pass').value = '';
+    showToast('Bağlandı: ' + (u.login || 'GitHub'));
+    renderSyncInfo();
+    openSyncModal(); // panel görünümüne geç
+  } catch (err) {
+    alert('Bağlanılamadı: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Bağlan';
+  }
+}
+
+// Uygulama arka plana alınırken bekleyen değişiklik varsa gönder
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && syncCfg.token && syncCfg.auto &&
+      (syncCfg.localTs || '') > (syncCfg.last || '')) {
+    pushSync(true);
+  }
+});
 
 
 })();

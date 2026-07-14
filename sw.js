@@ -1,6 +1,6 @@
 // Maaş Günü v5.0 — Service Worker
 // Sürüm değiştiğinde CACHE adını artırın (v5.0.1, v5.0.2 ...) — eski önbellek otomatik temizlenir.
-const CACHE = 'maas-gunu-v5.0.1';
+const CACHE = 'maas-gunu-v5.1.0';
 const SHELL = [
   './',
   'index.html',
