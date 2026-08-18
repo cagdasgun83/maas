@@ -1,6 +1,7 @@
-// Maaş Günü v5.0 — Service Worker
-// Sürüm değiştiğinde CACHE adını artırın (v5.0.1, v5.0.2 ...) — eski önbellek otomatik temizlenir.
-const CACHE = 'maas-gunu-v5.4.0';
+// Maaş Günü v5.4.1 — Service Worker
+// Strateji: uygulama sayfası için ÖNCE AĞ (güncellemeler tek açılışta gelir),
+// internet yoksa önbellek (çevrimdışı çalışma korunur). Diğer dosyalar önbellek öncelikli.
+const CACHE = 'maas-gunu-v5.5.0';
 const SHELL = [
   './',
   'index.html',
@@ -12,7 +13,15 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE).then((c) =>
+      Promise.all(SHELL.map((u) =>
+        fetch(u, { cache: 'no-cache', credentials: 'same-origin' })
+          .then((r) => { if (r && r.ok) return c.put(u, r); })
+          .catch(() => {})
+      ))
+    ).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -27,7 +36,25 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
 
-  // Google Fonts: önbellekte varsa oradan, yoksa ağdan al ve sakla (çevrimdışı yazı tipi desteği)
+  // Uygulama sayfası: önce ağ (HTTP önbelleğini atlayarak) → yoksa önbellek
+  if (e.request.mode === 'navigate' || url.pathname.endsWith('/index.html')) {
+    e.respondWith(
+      fetch(url.pathname + url.search, { cache: 'no-cache', credentials: 'same-origin' })
+        .then((res) => {
+          if (res && res.ok) {
+            const c1 = res.clone(), c2 = res.clone();
+            caches.open(CACHE).then((c) => { c.put('./', c1); c.put('index.html', c2); });
+          }
+          return res;
+        })
+        .catch(() =>
+          caches.match('index.html').then((h) => h || caches.match('./'))
+        )
+    );
+    return;
+  }
+
+  // Google Fonts: önbellekte varsa oradan, yoksa ağdan al ve sakla
   if (url.hostname.includes('fonts.googleapis.com') || url.hostname.includes('fonts.gstatic.com')) {
     e.respondWith(
       caches.open(CACHE).then((c) =>
@@ -39,7 +66,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Uygulama kabuğu: önce önbellek, sonra ağ; ağdan gelirse önbelleği tazele
+  // Diğer aynı-kaynak dosyalar (ikonlar, manifest): önce önbellek, arka planda tazele
   if (url.origin === location.origin) {
     e.respondWith(
       caches.match(e.request).then((hit) => {
