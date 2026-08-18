@@ -1476,6 +1476,34 @@ input[type="number"]::-webkit-inner-spin-button {
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
 }
 
+/* ===== v5.6 — Ana Sayfa ===== */
+.home-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.home-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 18px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg, 12px);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.home-tile:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(26,26,26,0.08); }
+.home-tile svg { width: 26px; height: 26px; color: var(--accent); margin-bottom: 2px; }
+.home-tile-title { font-size: 15px; font-weight: 600; }
+.home-tile-sub { font-size: 12px; color: var(--text-tertiary); }
+@media (max-width: 380px) { .home-tiles { grid-template-columns: 1fr; } }
+
 /* ===== v5.0 — Mobil / PWA ===== */
 .backup-info {
   display: block;
@@ -1633,7 +1661,8 @@ input[type="number"]::-webkit-inner-spin-button {
     </div>
     <div class="header-actions">
       <div class="mode-switch" role="tablist" aria-label="Mod seçimi">
-        <button class="mode-btn active" data-mode="budget" role="tab">Bütçe</button>
+        <button class="mode-btn active" data-mode="home" role="tab">Ana Sayfa</button>
+        <button class="mode-btn" data-mode="budget" role="tab">Bütçe</button>
         <button class="mode-btn" data-mode="portfolio" role="tab">Portföy</button>
       </div>
       <button class="btn btn-icon btn-ghost" id="theme-toggle" title="Tema değiştir" aria-label="Tema değiştir">
@@ -1660,7 +1689,11 @@ input[type="number"]::-webkit-inner-spin-button {
 
   <!-- v5.0: Mobil alt gezinme çubuğu -->
   <nav class="bottom-nav" id="bottom-nav" aria-label="Ana gezinme">
-    <button class="bnav-btn active" data-bnav="budget">
+    <button class="bnav-btn active" data-bnav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
+      Ana
+    </button>
+    <button class="bnav-btn" data-bnav="budget">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10"/></svg>
       Bütçe
     </button>
@@ -1679,7 +1712,44 @@ input[type="number"]::-webkit-inner-spin-button {
   </nav>
 
   <!-- ============== BÜTÇE MODU ============== -->
-  <div class="mode-section active" id="mode-budget">
+  <!-- ===== v5.6: ANA SAYFA ===== -->
+  <div class="mode-section active" id="mode-home">
+    <div class="card" style="text-align:center;padding:28px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-tertiary);" id="home-date"></div>
+      <h2 style="font-family:var(--font-serif);font-size:26px;margin:8px 0 0;" id="home-greeting">Hoş geldiniz</h2>
+    </div>
+
+    <div class="home-tiles">
+      <button class="home-tile" data-home-nav="budget">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10"/></svg>
+        <span class="home-tile-title">Bütçe</span>
+        <span class="home-tile-sub">Gelir, giderler, aylık plan</span>
+      </button>
+      <button class="home-tile" data-home-nav="portfolio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19V9m5 10V5m5 14v-7m5 7V11"/></svg>
+        <span class="home-tile-title">Portföy</span>
+        <span class="home-tile-sub">Yatırımlar ve genel bakış</span>
+      </button>
+      <button class="home-tile" data-home-nav="debts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>
+        <span class="home-tile-title">Borçlar</span>
+        <span class="home-tile-sub">Kartlar, krediler, hatırlatıcılar</span>
+      </button>
+      <button class="home-tile" data-home-nav="ledger">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 4h10a2 2 0 012 2v14l-3-2-3 2-3-2-3 2V6a2 2 0 012-2zM4 6v14"/><path d="M12 9h4m-4 4h4"/></svg>
+        <span class="home-tile-title">İşlem defteri</span>
+        <span class="home-tile-sub">Alış-satış kayıtları</span>
+      </button>
+    </div>
+
+    <div class="card" id="home-status-card">
+      <p class="card-title">Durum</p>
+      <div id="home-status" style="display:flex;flex-direction:column;gap:8px;font-size:13px;"></div>
+    </div>
+  </div>
+
+  <!-- ===== BÜTÇE MODU ===== -->
+  <div class="mode-section" id="mode-budget">
 
   <!-- Month bar -->
   <div class="month-bar">
@@ -7306,6 +7376,7 @@ function switchMode(mode) {
   document.querySelectorAll('.mode-section').forEach(s => {
     s.classList.toggle('active', s.id === 'mode-' + mode);
   });
+  if (mode === 'home') renderHome();
   if (mode === 'portfolio') {
     initLedgerIfNeeded();
     renderRates();
@@ -7313,6 +7384,75 @@ function switchMode(mode) {
     renderPortfolioKPIs();
     renderTransactions();
   }
+}
+
+// ===== v5.6: Ana Sayfa =====
+function renderHome() {
+  const g = document.getElementById('home-greeting');
+  const dt = document.getElementById('home-date');
+  const st = document.getElementById('home-status');
+  if (!g) return;
+  const now = new Date();
+  const h = now.getHours();
+  g.textContent = h < 6 ? 'İyi geceler' : h < 12 ? 'Günaydın' : h < 18 ? 'İyi günler' : 'İyi akşamlar';
+  dt.textContent = now.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  const rows = [];
+  const dot = (color, text) =>
+    '<div style="display:flex;align-items:center;gap:8px;"><span style="width:7px;height:7px;border-radius:50%;background:' + color + ';flex-shrink:0;"></span><span>' + text + '</span></div>';
+
+  // Eşitleme durumu (tutar içermez)
+  if (syncCfg.token) {
+    const dirty = syncCfg.localTs && syncCfg.localTs > (syncCfg.last || '');
+    if (dirty) rows.push(dot('var(--warning-text, #b8860b)', 'Eşitleme: gönderilmemiş değişiklik var'));
+    else if (syncCfg.last) rows.push(dot('var(--success-text, #3d7a4a)', 'Eşitleme güncel · ' + new Date(syncCfg.last).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })));
+    else rows.push(dot('var(--text-tertiary)', 'Eşitleme bağlı — ilk gönderim bekleniyor'));
+  } else {
+    rows.push(dot('var(--text-tertiary)', 'Eşitleme kurulu değil'));
+  }
+
+  // Son Excel yedeği
+  const b = localStorage.getItem('mg-last-backup');
+  if (b) {
+    const days = Math.floor((Date.now() - new Date(b).getTime()) / 86400000);
+    const col = days >= 30 ? 'var(--danger-text)' : (days >= 14 ? 'var(--warning-text, #b8860b)' : 'var(--success-text, #3d7a4a)');
+    rows.push(dot(col, 'Son Excel yedeği: ' + (days === 0 ? 'bugün' : days + ' gün önce')));
+  } else {
+    rows.push(dot('var(--danger-text)', 'Henüz Excel yedeği alınmadı'));
+  }
+
+  // Önümüzdeki 7 günün ödemeleri (yalnızca isim + gün; tutar gösterilmez)
+  try {
+    const r = ensureReminders();
+    const upcoming = [];
+    const nameOf = (id) => {
+      const c = debtsState.cards.find(x => x.id === id); if (c) return c.name || 'Kart';
+      const l = debtsState.loans.find(x => x.id === id); if (l) return l.name || 'Kredi';
+      return null;
+    };
+    const pushIf = (name, day) => {
+      if (!name || !day) return;
+      for (let a = 0; a < 7; a++) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + a);
+        const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        const due = day > 28 ? last : day;
+        if (d.getDate() === due) { upcoming.push({ name, d }); return; }
+      }
+    };
+    Object.keys(r.items).forEach(id => { const c = r.items[id]; if (c && c.enabled && c.day) pushIf(nameOf(id), c.day); });
+    r.custom.forEach(p => { if (p.enabled && p.day && p.name) pushIf(p.name, p.day); });
+    upcoming.sort((a, b2) => a.d - b2.d);
+    if (upcoming.length) {
+      rows.push('<div style="border-top:1px solid var(--border);margin:4px 0;"></div>');
+      upcoming.slice(0, 5).forEach(u => {
+        const when = u.d.toDateString() === now.toDateString() ? 'bugün'
+          : u.d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', weekday: 'short' });
+        rows.push(dot('var(--accent)', 'Ödeme günü: ' + u.name + ' — ' + when));
+      });
+    }
+  } catch (e) { /* hatırlatıcı verisi henüz yoksa sessiz geç */ }
+
+  st.innerHTML = rows.join('');
 }
 
 function switchPane(pane) {
@@ -7499,6 +7639,24 @@ function attachPortfolioInputs() {
     showLock(); // ön-boya scripti göstermişti; buton görünürlüğünü tazele
     if (lockCfg.cred && webAuthnAvailable()) tryBioUnlock(); // açılışta Face ID'yi otomatik dene
   }
+
+  // ===== v5.6: ana sayfa kabloları =====
+  document.querySelectorAll('[data-home-nav]').forEach(t => {
+    t.onclick = () => {
+      const nav = t.dataset.homeNav;
+      if (nav === 'budget') switchMode('budget');
+      else if (nav === 'portfolio') switchMode('portfolio');
+      else if (nav === 'debts') {
+        switchMode('budget');
+        const el = document.querySelector('.step[data-step="2"]');
+        if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 30);
+      } else if (nav === 'ledger') {
+        switchMode('portfolio');
+        switchPane('ledger');
+      }
+    };
+  });
+  renderHome();
 
   appReady = true;
 
