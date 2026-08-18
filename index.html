@@ -1569,6 +1569,12 @@ input[type="number"]::-webkit-inner-spin-button {
   /* İşlem formu (Portföy → İşlem defteri): tarih/not tam satır */
   .tx-form { grid-template-columns: 1fr 1fr !important; }
   .tx-form button { grid-column: 1 / -1; }
+
+  /* Hatırlatıcı satırları: isim tam satır, gün altta */
+  .rem-row { grid-template-columns: auto 1fr !important; row-gap: 6px !important; }
+  .rem-row > div:nth-child(2) { min-width: 0; }
+  .rem-row > div:nth-child(3) { grid-column: 2; justify-content: flex-end; }
+  .rem-row [data-rem-del] { grid-column: 1 / -1; justify-self: end; }
 }
 </style>
 </head>
@@ -1827,6 +1833,49 @@ input[type="number"]::-webkit-inner-spin-button {
       </p>
       <div id="loans-container"></div>
       <button class="btn-add" id="add-loan">+ Yeni kredi ekle</button>
+    </div>
+
+    <!-- v5.3: Ödeme hatırlatıcıları -->
+    <div class="card">
+      <p class="card-title">Ödeme hatırlatıcıları</p>
+      <p class="section-subtitle" style="margin-bottom:10px;">Kart ve kredileriniz için son ödeme gününü seçin; iPhone Takvim'e abone edin, ödeme günleri yaklaşınca telefon bildirim göndersin. Veri değişince "Takvimi güncelle"ye basmanız yeterli.</p>
+      <div id="rem-container"></div>
+      <button class="btn-add" id="add-custom-payment">+ Diğer ödeme ekle (aidat, fatura…)</button>
+
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px;">
+        <label class="field-label" style="margin:0;">Hatırlat:</label>
+        <select id="rem-alarm-days" style="width:auto;">
+          <option value="0">Aynı gün</option>
+          <option value="1" selected>1 gün önce</option>
+          <option value="2">2 gün önce</option>
+          <option value="3">3 gün önce</option>
+        </select>
+        <select id="rem-alarm-hour" style="width:auto;">
+          <option value="8">08:00</option>
+          <option value="9" selected>09:00</option>
+          <option value="12">12:00</option>
+          <option value="18">18:00</option>
+          <option value="20">20:00</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="rem-show-amounts" style="width:auto;">
+          Tutarları takvime yaz
+        </label>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+        <button class="btn btn-primary" id="rem-upload">Takvimi güncelle (bulut)</button>
+        <button class="btn" id="rem-download">.ics indir</button>
+      </div>
+
+      <div id="rem-url-box" style="display:none;margin-top:12px;">
+        <label class="field-label">Takvim abonelik adresi</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="rem-url" readonly style="flex:1;font-size:12px;">
+          <button class="btn" id="rem-copy">Kopyala</button>
+        </div>
+        <p style="font-size:12px;margin-top:8px;">Tek seferlik kurulum — iPhone'da: <b>Ayarlar → Takvim → Hesaplar → Hesap Ekle → Diğer → Abone Olunan Takvim Ekle</b> → adresi yapıştır → Kaydet. (Yeni iOS'ta: Ayarlar → Uygulamalar → Takvim.) Sonrasında bu listede yaptığınız değişiklikler "Takvimi güncelle" ile telefona kendiliğinden yansır.</p>
+      </div>
     </div>
 
     <div class="metrics">
@@ -4011,6 +4060,7 @@ function generatePalette(n) {
 
 // ---------- Update all metrics ----------
 function updateMetrics() {
+  renderReminders();
   updateKalanBakiye();
   const inc = num(state.income);
   const cost = totalCost();
@@ -7325,6 +7375,34 @@ function attachPortfolioInputs() {
     localStorage.removeItem('mg-sync-pulled-toast');
     showToast('Buluttan güncellendi');
   }
+
+  // ===== v5.3: hatırlatıcı kabloları =====
+  (function initReminders() {
+    const r = ensureReminders();
+    const days = document.getElementById('rem-alarm-days');
+    const hour = document.getElementById('rem-alarm-hour');
+    const amts = document.getElementById('rem-show-amounts');
+    if (!days) return;
+    days.value = String(r.alarmDays);
+    hour.value = String(r.alarmHour);
+    amts.checked = !!r.showAmounts;
+    days.onchange = () => { ensureReminders().alarmDays = parseInt(days.value, 10) || 0; saveDebts(); };
+    hour.onchange = () => { ensureReminders().alarmHour = parseInt(hour.value, 10) || 9; saveDebts(); };
+    amts.onchange = () => { ensureReminders().showAmounts = amts.checked; saveDebts(); };
+    document.getElementById('add-custom-payment').onclick = () => {
+      ensureReminders().custom.push({ id: genId('PAY'), name: '', amount: 0, day: 0, enabled: true });
+      saveDebts(); renderReminders();
+    };
+    document.getElementById('rem-upload').onclick = uploadICS;
+    document.getElementById('rem-download').onclick = downloadICS;
+    document.getElementById('rem-copy').onclick = async () => {
+      try { await navigator.clipboard.writeText(document.getElementById('rem-url').value); showToast('Adres kopyalandı'); }
+      catch (e) { document.getElementById('rem-url').select(); document.execCommand('copy'); showToast('Adres kopyalandı'); }
+    };
+    renderReminders();
+    showRemUrl();
+  })();
+
   appReady = true;
   renderSyncInfo();
   autoStartupSync();
@@ -7594,6 +7672,199 @@ function renderSyncInfo(err) {
   } else {
     el.textContent = 'Eşitleme: bağlı — ilk gönderim bekleniyor';
     el.style.color = 'var(--text-tertiary)';
+  }
+}
+
+// ===== v5.3: Ödeme hatırlatıcıları (iOS Takvim aboneliği ile bildirim) =====
+function ensureReminders() {
+  if (!debtsState.reminders) debtsState.reminders = {};
+  const r = debtsState.reminders;
+  if (r.alarmDays === undefined) r.alarmDays = 1;
+  if (r.alarmHour === undefined) r.alarmHour = 9;
+  if (!r.items) r.items = {};
+  if (!r.custom) r.custom = [];
+  if (r.showAmounts === undefined) r.showAmounts = false;
+  return r;
+}
+
+function renderReminders() {
+  const c = document.getElementById('rem-container');
+  if (!c) return;
+  if (c.contains(document.activeElement)) return; // yazarken listeyi ezme
+  const r = ensureReminders();
+  let html = '';
+  const row = (id, label, sub, cfg, deletable, amount) => {
+    html += '<div class="rem-row" style="display:grid;grid-template-columns:auto 1fr 92px' + (deletable ? ' 30px' : '') + ';gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">';
+    html += '<input type="checkbox" data-rem-en="' + id + '" style="width:auto;"' + (cfg.enabled ? ' checked' : '') + '>';
+    if (deletable) {
+      html += '<div><input type="text" data-rem-name="' + id + '" value="' + (label || '').replace(/"/g, '&quot;') + '" placeholder="Ödeme adı" style="font-size:13px;margin-bottom:4px;">' +
+              '<input type="number" data-rem-amt="' + id + '" value="' + (amount || '') + '" placeholder="Tutar (ops.)" style="font-size:12px;width:120px;"></div>';
+    } else {
+      html += '<div style="min-width:0;"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (label || '(isimsiz)') + '</div>' +
+              (sub ? '<div style="font-size:11px;color:var(--text-tertiary);">' + sub + '</div>' : '') + '</div>';
+    }
+    html += '<div style="display:flex;align-items:center;gap:4px;"><span style="font-size:11px;color:var(--text-tertiary);">Gün</span>' +
+            '<input type="number" min="1" max="31" data-rem-day="' + id + '" value="' + (cfg.day || '') + '" placeholder="26" style="width:56px;font-size:13px;"></div>';
+    if (deletable) html += '<button class="btn-ghost btn" data-rem-del="' + id + '" style="padding:2px 8px;color:var(--danger-text);">×</button>';
+    html += '</div>';
+  };
+  debtsState.cards.forEach(cd => row(cd.id, cd.name || 'Kart', 'Kredi kartı', r.items[cd.id] || {}, false));
+  debtsState.loans.forEach(ln => row(ln.id, ln.name || 'Kredi', 'Kredi taksidi' + (ln.monthlyPayment ? ' · ' + fmtTL(ln.monthlyPayment) : ''), r.items[ln.id] || {}, false));
+  r.custom.forEach(p => row(p.id, p.name, '', p, true, p.amount));
+  if (!html) html = '<p style="font-size:12px;color:var(--text-tertiary);padding:6px 0;">Önce yukarıdan kart/kredi ekleyin veya "Diğer ödeme ekle" ile başlayın.</p>';
+  c.innerHTML = html;
+
+  c.querySelectorAll('[data-rem-en]').forEach(el => el.onchange = () => {
+    const id = el.dataset.remEn; const rr = ensureReminders();
+    const cu = rr.custom.find(x => x.id === id);
+    if (cu) cu.enabled = el.checked;
+    else { if (!rr.items[id]) rr.items[id] = {}; rr.items[id].enabled = el.checked; }
+    saveDebts();
+  });
+  c.querySelectorAll('[data-rem-day]').forEach(el => el.onchange = () => {
+    const id = el.dataset.remDay; const rr = ensureReminders();
+    let d = parseInt(el.value, 10); if (isNaN(d) || d < 1) d = 0; if (d > 31) d = 31;
+    const cu = rr.custom.find(x => x.id === id);
+    if (cu) cu.day = d;
+    else { if (!rr.items[id]) rr.items[id] = {}; rr.items[id].day = d; }
+    saveDebts();
+  });
+  c.querySelectorAll('[data-rem-name]').forEach(el => el.onchange = () => {
+    const cu = ensureReminders().custom.find(x => x.id === el.dataset.remName);
+    if (cu) { cu.name = el.value; saveDebts(); }
+  });
+  c.querySelectorAll('[data-rem-amt]').forEach(el => el.onchange = () => {
+    const cu = ensureReminders().custom.find(x => x.id === el.dataset.remAmt);
+    if (cu) { cu.amount = parseFloat(el.value) || 0; saveDebts(); }
+  });
+  c.querySelectorAll('[data-rem-del]').forEach(el => el.onclick = () => {
+    const rr = ensureReminders();
+    rr.custom = rr.custom.filter(x => x.id !== el.dataset.remDel);
+    saveDebts(); renderReminders();
+  });
+}
+
+function icsEscape(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+function icsUtcStamp(d) {
+  const p = n => String(n).padStart(2, '0');
+  return d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) + 'T' + p(d.getUTCHours()) + p(d.getUTCMinutes()) + '00Z';
+}
+
+function buildICS() {
+  const r = ensureReminders();
+  const pad = n => String(n).padStart(2, '0');
+  const now = new Date();
+  const h = parseInt(r.alarmHour, 10) || 9;
+  const items = [];
+  debtsState.cards.forEach(cd => {
+    const cfg = r.items[cd.id];
+    if (cfg && cfg.enabled && cfg.day) items.push({ id: cd.id, name: (cd.name || 'Kart') + ' — son ödeme günü', day: cfg.day });
+  });
+  debtsState.loans.forEach(ln => {
+    const cfg = r.items[ln.id];
+    if (cfg && cfg.enabled && cfg.day) items.push({
+      id: ln.id, name: (ln.name || 'Kredi') + ' — taksit günü', day: cfg.day,
+      desc: (r.showAmounts && ln.monthlyPayment) ? fmtTL(ln.monthlyPayment) : '', until: ln.endMonth
+    });
+  });
+  r.custom.forEach(p => {
+    if (p.enabled && p.day && p.name) items.push({
+      id: p.id, name: p.name + ' — ödeme günü', day: p.day,
+      desc: (r.showAmounts && p.amount) ? fmtTL(p.amount) : ''
+    });
+  });
+  if (!items.length) return null;
+
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MaasGunu//Odeme Hatirlaticilari//TR',
+    'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Maaş Günü — Ödemeler'];
+  items.forEach(it => {
+    const monthEnd = it.day > 28;
+    const dayFor = (y, m) => monthEnd ? new Date(y, m + 1, 0).getDate() : it.day; // m: 0-tabanlı
+    let d = new Date(now.getFullYear(), now.getMonth(), dayFor(now.getFullYear(), now.getMonth()), h, 0, 0);
+    if (d <= now) {
+      const ny = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+      const nm = (now.getMonth() + 1) % 12;
+      d = new Date(ny, nm, dayFor(ny, nm), h, 0, 0);
+    }
+    const dtstart = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(h) + '0000';
+    let rrule = 'FREQ=MONTHLY;BYMONTHDAY=' + (monthEnd ? '28,29,30,31;BYSETPOS=-1' : it.day);
+    if (it.until) {
+      const parts = String(it.until).split('-').map(Number);
+      if (parts[0] && parts[1]) {
+        const ld = new Date(parts[0], parts[1], 0).getDate();
+        rrule += ';UNTIL=' + parts[0] + pad(parts[1]) + pad(ld) + 'T235959';
+      }
+    }
+    lines.push('BEGIN:VEVENT',
+      'UID:mg-' + it.id + '@maasgunu',
+      'DTSTAMP:' + icsUtcStamp(now),
+      'DTSTART:' + dtstart,
+      'RRULE:' + rrule,
+      'SUMMARY:' + icsEscape(it.name));
+    if (it.desc) lines.push('DESCRIPTION:' + icsEscape(it.desc));
+    lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEscape(it.name),
+      'TRIGGER:' + (r.alarmDays > 0 ? '-P' + r.alarmDays + 'D' : 'PT0S'),
+      'END:VALARM', 'END:VEVENT');
+  });
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+async function uploadICS() {
+  const ics = buildICS();
+  if (!ics) { showToast('Önce en az bir ödeme için gün seçip kutucuğunu işaretleyin'); return; }
+  if (!syncCfg.token) {
+    alert('Takvimi buluta koymak için önce Eşitle bölümünden GitHub bağlantısı kurmanız gerekiyor. (Alternatif: ".ics indir" ile dosyayı elle içe aktarabilirsiniz — ama o yöntemde güncellemeler otomatik yansımaz.)');
+    openSyncModal();
+    return;
+  }
+  const btn = document.getElementById('rem-upload');
+  btn.disabled = true; btn.textContent = 'Yükleniyor…';
+  try {
+    const id = await findOrCreateGist();
+    const res = await ghFetch('https://api.github.com/gists/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({ files: { 'maas-gunu-odemeler.ics': { content: ics } } })
+    });
+    if (!res.ok) throw new Error('Yüklenemedi: ' + res.status);
+    const g = await res.json();
+    const owner = g.owner && g.owner.login;
+    if (!owner) throw new Error('Hesap adı okunamadı');
+    const url = 'https://gist.githubusercontent.com/' + owner + '/' + id + '/raw/maas-gunu-odemeler.ics';
+    ensureReminders().icsUrl = url;
+    saveDebts();
+    showRemUrl();
+    showToast('Takvim buluta yüklendi — telefondaki abonelik kendiliğinden güncellenecek');
+  } catch (err) {
+    console.error('uploadICS:', err);
+    alert('Takvim yüklenemedi: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Takvimi güncelle (bulut)';
+  }
+}
+
+function downloadICS() {
+  const ics = buildICS();
+  if (!ics) { showToast('Önce en az bir ödeme için gün seçip kutucuğunu işaretleyin'); return; }
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'maas-gunu-odemeler.ics';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function showRemUrl() {
+  const r = ensureReminders();
+  const box = document.getElementById('rem-url-box');
+  if (!box) return;
+  if (r.icsUrl) {
+    box.style.display = 'block';
+    document.getElementById('rem-url').value = r.icsUrl;
+  } else {
+    box.style.display = 'none';
   }
 }
 
