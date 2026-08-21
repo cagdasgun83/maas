@@ -1504,6 +1504,67 @@ input[type="number"]::-webkit-inner-spin-button {
 .home-tile-sub { font-size: 12px; color: var(--text-tertiary); }
 @media (max-width: 380px) { .home-tiles { grid-template-columns: 1fr; } }
 
+/* ===== v5.7 — Hızlı ekle ===== */
+#fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  width: 54px; height: 54px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(26,26,26,0.25);
+  z-index: 850;
+  transition: transform .12s ease;
+}
+#fab:active { transform: scale(0.94); }
+@media (max-width: 768px) {
+  #fab { bottom: calc(88px + env(safe-area-inset-bottom)); }
+}
+#qa-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(20,20,20,0.45);
+  z-index: 950;
+}
+#qa-sheet {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 960;
+  background: var(--bg-card);
+  border-radius: 18px 18px 0 0;
+  padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
+  max-height: 82vh;
+  overflow-y: auto;
+  box-shadow: 0 -6px 30px rgba(20,20,20,0.25);
+}
+#qa-sheet.open, #qa-backdrop.open { display: block; }
+@media (min-width: 769px) {
+  #qa-sheet { left: 50%; right: auto; bottom: auto; top: 50%; transform: translate(-50%,-50%); width: 420px; border-radius: 16px; }
+}
+.qa-handle { width: 40px; height: 4px; border-radius: 2px; background: var(--border-strong); margin: 0 auto 12px; }
+.qa-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.qa-tab {
+  padding: 10px; border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  cursor: pointer;
+}
+.qa-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.qa-pane { display: none; }
+.qa-pane.active { display: block; }
+#qa-sheet .field-label { margin-top: 10px; }
+#qa-sheet input, #qa-sheet select { width: 100%; padding: 11px 12px; font-size: 16px; }
+.qa-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.qa-save { width: 100%; margin-top: 16px; min-height: 46px; font-size: 15px; }
+
 /* ===== v5.0 — Mobil / PWA ===== */
 .backup-info {
   display: block;
@@ -2638,6 +2699,74 @@ input[type="number"]::-webkit-inner-spin-button {
         <button class="btn" id="lock-close">Kapat</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- v5.7: Hızlı ekle -->
+<button id="fab" aria-label="Hızlı ekle" title="Hızlı ekle">+</button>
+
+<div id="qa-backdrop"></div>
+<div id="qa-sheet" role="dialog" aria-label="Hızlı ekle">
+  <div class="qa-handle"></div>
+  <div class="qa-tabs">
+    <button class="qa-tab active" data-qa-tab="spend">Kart harcaması</button>
+    <button class="qa-tab" data-qa-tab="tx">Portföy işlemi</button>
+  </div>
+
+  <div class="qa-pane active" id="qa-pane-spend">
+    <label class="field-label">Kart</label>
+    <select id="qa-card"></select>
+    <label class="field-label">Kategori</label>
+    <select id="qa-cat"></select>
+    <label class="field-label">Tutar (₺)</label>
+    <input type="text" inputmode="decimal" id="qa-amount" placeholder="0">
+    <label class="field-label">Not (opsiyonel)</label>
+    <input type="text" id="qa-note" placeholder="">
+    <div id="qa-spend-month" style="font-size:12px;color:var(--text-tertiary);margin-top:6px;"></div>
+    <button class="btn btn-primary qa-save" id="qa-spend-save">Kaydet</button>
+  </div>
+
+  <div class="qa-pane" id="qa-pane-tx">
+    <div class="qa-row2">
+      <div>
+        <label class="field-label">Tarih</label>
+        <input type="date" id="qa-tx-date">
+      </div>
+      <div>
+        <label class="field-label">Tip</label>
+        <select id="qa-tx-type">
+          <option value="buy">Alış</option>
+          <option value="sell">Satış</option>
+        </select>
+      </div>
+    </div>
+    <label class="field-label">Enstrüman</label>
+    <select id="qa-tx-inst"></select>
+    <div class="qa-row2">
+      <div>
+        <label class="field-label">Adet</label>
+        <input type="text" inputmode="decimal" id="qa-tx-qty" placeholder="0">
+      </div>
+      <div>
+        <label class="field-label">Birim fiyat (₺)</label>
+        <input type="text" inputmode="decimal" id="qa-tx-price" placeholder="0">
+      </div>
+    </div>
+    <div class="qa-row2">
+      <div>
+        <label class="field-label">Kova</label>
+        <select id="qa-tx-bucket">
+          <option value="uv">Uzun vade</option>
+          <option value="ev">Ev</option>
+        </select>
+      </div>
+      <div>
+        <label class="field-label">Not (ops.)</label>
+        <input type="text" id="qa-tx-note">
+      </div>
+    </div>
+    <div id="qa-tx-total" style="font-size:12px;color:var(--text-tertiary);margin-top:6px;"></div>
+    <button class="btn btn-primary qa-save" id="qa-tx-save">Kaydet</button>
   </div>
 </div>
 
@@ -7658,6 +7787,17 @@ function attachPortfolioInputs() {
   });
   renderHome();
 
+  // ===== v5.7: hızlı ekle kabloları =====
+  document.getElementById('fab').onclick = qaOpen;
+  document.getElementById('qa-backdrop').onclick = qaClose;
+  document.querySelectorAll('.qa-tab').forEach(t => t.onclick = () => qaTab(t.dataset.qaTab));
+  document.getElementById('qa-spend-save').onclick = qaSaveSpend;
+  document.getElementById('qa-tx-save').onclick = qaSaveTx;
+  document.getElementById('qa-tx-qty').addEventListener('input', qaTxTotal);
+  document.getElementById('qa-tx-price').addEventListener('input', qaTxTotal);
+  document.getElementById('qa-amount').addEventListener('keydown', (e) => { if (e.key === 'Enter') qaSaveSpend(); });
+  qaTab(localStorage.getItem('mg-qa-tab') || 'spend');
+
   appReady = true;
 
   // ===== v5.5: açılış perdesini kaldır (en az 500 ms görünür) =====
@@ -8281,6 +8421,114 @@ document.addEventListener('visibilitychange', () => {
     if (lockHiddenAt && (Date.now() - lockHiddenAt) / 60000 >= lockCfg.grace) showLock();
   }
 });
+
+// ===== v5.7: Hızlı ekle (FAB + alt sayfa) =====
+function qaOpen() {
+  qaFillSpend();
+  qaFillTx();
+  document.getElementById('qa-backdrop').classList.add('open');
+  document.getElementById('qa-sheet').classList.add('open');
+}
+function qaClose() {
+  document.getElementById('qa-backdrop').classList.remove('open');
+  document.getElementById('qa-sheet').classList.remove('open');
+}
+function qaTab(name) {
+  document.querySelectorAll('.qa-tab').forEach(t => t.classList.toggle('active', t.dataset.qaTab === name));
+  document.getElementById('qa-pane-spend').classList.toggle('active', name === 'spend');
+  document.getElementById('qa-pane-tx').classList.toggle('active', name === 'tx');
+  localStorage.setItem('mg-qa-tab', name);
+}
+
+function qaFillSpend() {
+  const cardSel = document.getElementById('qa-card');
+  const catSel = document.getElementById('qa-cat');
+  const lastCard = localStorage.getItem('mg-qa-card');
+  const lastCat = localStorage.getItem('mg-qa-cat');
+  cardSel.innerHTML = debtsState.cards.length
+    ? debtsState.cards.map(cd => '<option value="' + cd.id + '">' + escapeHtml(cd.name || 'Kart') + '</option>').join('')
+    : '<option value="">Önce Borçlar bölümünden kart ekleyin</option>';
+  if (lastCard && debtsState.cards.some(cd => cd.id === lastCard)) cardSel.value = lastCard;
+  catSel.innerHTML = SPEND_CATEGORIES.map(x => '<option value="' + escapeHtml(x) + '">' + escapeHtml(x) + '</option>').join('');
+  if (lastCat && SPEND_CATEGORIES.includes(lastCat)) catSel.value = lastCat;
+  const ml = document.getElementById('qa-spend-month');
+  ml.textContent = currentId ? ('Kaydedileceği ay: ' + monthLabelOf(currentId)) : 'Önce Bütçe bölümünden bir ay oluşturun';
+}
+function monthLabelOf(ym) {
+  const p = String(ym).split('-');
+  const names = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+  return (names[(+p[1]) - 1] || '') + ' ' + p[0];
+}
+
+function qaSaveSpend() {
+  if (!currentId) { showToast('Önce Bütçe bölümünden bir ay oluşturun'); return; }
+  const cardId = document.getElementById('qa-card').value;
+  const card = debtsState.cards.find(cd => cd.id === cardId);
+  if (!card) { showToast('Kart seçin'); return; }
+  const amount = num(document.getElementById('qa-amount').value);
+  if (amount <= 0) { showToast('Tutar girin'); return; }
+  const category = document.getElementById('qa-cat').value || 'Diğer';
+  const note = document.getElementById('qa-note').value.trim();
+  getCardSpendDetails(card, currentId).push({ id: genId('SP'), category, amount, note });
+  localStorage.setItem('mg-qa-card', cardId);
+  localStorage.setItem('mg-qa-cat', category);
+  saveDebts(); renderCards(); updateMetrics();
+  showToast(category + ' · ' + fmtTL(amount) + ' → ' + (card.name || 'Kart') + ' (' + monthLabelOf(currentId) + ')');
+  document.getElementById('qa-amount').value = '';
+  document.getElementById('qa-note').value = '';
+  document.getElementById('qa-amount').focus();
+}
+
+function qaFillTx() {
+  const sel = document.getElementById('qa-tx-inst');
+  const names = [...new Set([
+    ...pState.portfolio.uv.map(x => x.name),
+    ...pState.portfolio.ev.map(x => x.name)
+  ])].filter(n => !isContributionEligible(n)).sort();
+  const last = localStorage.getItem('mg-qa-inst');
+  sel.innerHTML = names.length
+    ? names.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join('')
+    : '<option value="">Önce Portföy bölümünden enstrüman ekleyin</option>';
+  if (last && names.includes(last)) sel.value = last;
+  const dateEl = document.getElementById('qa-tx-date');
+  if (!dateEl.value) {
+    const t = new Date();
+    dateEl.value = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+  }
+  qaTxTotal();
+}
+function qaTxTotal() {
+  const q = num(document.getElementById('qa-tx-qty').value);
+  const p = num(document.getElementById('qa-tx-price').value);
+  document.getElementById('qa-tx-total').textContent = (q > 0 && p > 0) ? ('Toplam: ' + fmtTL(q * p)) : '';
+}
+
+function qaSaveTx() {
+  const inst = document.getElementById('qa-tx-inst').value;
+  if (!inst) { showToast('Enstrüman seçin'); return; }
+  if (typeof editingTxId !== 'undefined' && editingTxId) cancelEditTransaction();
+  // Mevcut kayıt hattını kullan: gizli formu doldur, addTransaction() çağır
+  $('tx-date').value = document.getElementById('qa-tx-date').value;
+  const instSel = $('tx-instrument');
+  if (![...instSel.options].some(o => o.value === inst)) {
+    const o = document.createElement('option'); o.value = inst; o.textContent = inst; instSel.appendChild(o);
+  }
+  instSel.value = inst;
+  $('tx-type').value = document.getElementById('qa-tx-type').value;
+  $('tx-bucket').value = document.getElementById('qa-tx-bucket').value;
+  $('tx-qty').value = document.getElementById('qa-tx-qty').value;
+  $('tx-price').value = document.getElementById('qa-tx-price').value;
+  $('tx-note').value = document.getElementById('qa-tx-note').value;
+  const before = pState.transactions.length;
+  addTransaction();
+  if (pState.transactions.length > before) {
+    localStorage.setItem('mg-qa-inst', inst);
+    document.getElementById('qa-tx-qty').value = '';
+    document.getElementById('qa-tx-price').value = '';
+    document.getElementById('qa-tx-note').value = '';
+    qaTxTotal();
+  }
+}
 
 // ---- Eşitleme modalı ----
 function openSyncModal() {
