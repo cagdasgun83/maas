@@ -2687,11 +2687,12 @@ input[type="number"]::-webkit-inner-spin-button {
 
     <div id="lock-panel" style="display:none;">
       <p id="lock-status" style="margin-bottom:12px;"></p>
-      <label class="field-label">Arka plana alınınca yeniden kilitle</label>
+      <label class="field-label">Yeniden kilitleme (açılışlar dahil)</label>
       <select id="lock-grace" style="margin-bottom:14px;">
-        <option value="0">Hemen</option>
-        <option value="1">1 dakika sonra</option>
-        <option value="5">5 dakika sonra</option>
+        <option value="0">Her zaman kilitle (her açılışta sor)</option>
+        <option value="1">1 dakikadan uzun süre geçtiyse</option>
+        <option value="5">5 dakikadan uzun süre geçtiyse</option>
+        <option value="15">15 dakikadan uzun süre geçtiyse</option>
       </select>
       <p style="font-size:12px;margin-bottom:12px;">Not: Bu bir gizlilik kilididir — veriyi şifrelemez, telefonu açık ele geçiren teknik bilgili birine karşı koruma sağlamaz. PIN'inizi unutmayın: kilidi ancak PIN veya Face ID ile açabilirsiniz (verileriniz her durumda bulut eşitlemesi/Excel yedeğinden başka cihazda erişilebilir kalır).</p>
       <div class="modal-actions">
@@ -3577,18 +3578,26 @@ function renderCards() {
       // Taksitler
       html += '<div style="border-top:0.5px solid var(--border);padding-top:10px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-        '<span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);">Taksitli alışverişler (' + (card.installments || []).length + ') · Bu ay: ' +
+        '<span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);">Taksitli alışverişler (' + (card.installments || []).filter(inst => !(inst.startMonth && num(inst.totalCount) > 0 && monthDiff(inst.startMonth, currentId) >= num(inst.totalCount))).length + ') · Bu ay: ' +
           '<span style="color:var(--accent);font-weight:500;">' + fmtTL(cardInstThisMonth) + '</span>' +
         '</span>';
       html += '<button class="btn-add" data-add-inst="' + ci + '" style="font-size:11px;padding:4px 10px;">+ Taksit ekle</button></div>';
 
+      const visibleInstCount = (card.installments || []).filter(inst =>
+        !(inst.startMonth && num(inst.totalCount) > 0 && monthDiff(inst.startMonth, currentId) >= num(inst.totalCount))
+      ).length;
       if (!card.installments || card.installments.length === 0) {
         html += '<p style="font-size:12px;color:var(--text-tertiary);font-style:italic;">Taksitli alışveriş yok.</p>';
+      } else if (visibleInstCount === 0) {
+        html += '<p style="font-size:12px;color:var(--text-tertiary);font-style:italic;">Bu ay için aktif taksit yok (biten taksitler geçmiş aylarda görünür).</p>';
       } else {
         html += '<div style="display:grid;gap:6px;">';
         card.installments.forEach((inst, ii) => {
           const startIdx = monthDiff(inst.startMonth, currentId);
           const isActive = startIdx >= 0 && startIdx < num(inst.totalCount);
+          // Süresi bu aydan önce dolan taksitler bu ayda listelenmez (geçmiş aylarda görünmeye devam eder)
+          const isFinished = inst.startMonth && num(inst.totalCount) > 0 && startIdx >= num(inst.totalCount);
+          if (isFinished) return;
           const remaining = Math.max(0, num(inst.totalCount) - Math.max(0, startIdx));
           const monthly = num(inst.totalCount) > 0 ? num(inst.amount) / num(inst.totalCount) : 0;
           const instCatOptions = SPEND_CATEGORIES.map(c =>
@@ -3772,6 +3781,9 @@ function renderCards() {
       e.stopPropagation();
       const ci = +b.dataset.rmInstC;
       const ii = +b.dataset.rmInstI;
+      const inst = debtsState.cards[ci].installments[ii];
+      const nm = (inst && inst.label) ? '"' + inst.label + '" taksidi' : 'Bu taksit';
+      if (!confirm(nm + ' GEÇMİŞ AYLAR DAHİL tüm aylardan silinecek ve o ayların toplamları değişecek. Emin misiniz?\n\n(Not: Süresi biten taksitler zaten yeni aylarda otomatik gizlenir — silmenize gerek yok.)')) return;
       debtsState.cards[ci].installments.splice(ii, 1);
       saveDebts(); renderCards(); updateMetrics();
     };
@@ -7765,8 +7777,14 @@ function attachPortfolioInputs() {
   document.getElementById('lock-pin-btn').onclick = tryPinUnlock;
   document.getElementById('lock-pin-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryPinUnlock(); });
   if (lockCfg.enabled) {
-    showLock(); // ön-boya scripti göstermişti; buton görünürlüğünü tazele
-    if (lockCfg.cred && webAuthnAvailable()) tryBioUnlock(); // açılışta Face ID'yi otomatik dene
+    const ua = parseInt(localStorage.getItem('mg-lock-unlocked-at') || '0', 10);
+    const withinGrace = lockCfg.grace > 0 && ua && (Date.now() - ua) / 60000 < lockCfg.grace;
+    if (withinGrace) {
+      hideLock(); // kısa süre önce açılmıştı — tekrar sorma
+    } else {
+      showLock(); // ön-boya scripti göstermişti; buton görünürlüğünü tazele
+      if (lockCfg.cred && webAuthnAvailable()) tryBioUnlock(); // açılışta Face ID'yi otomatik dene
+    }
   }
 
   // ===== v5.6: ana sayfa kabloları =====
@@ -8342,6 +8360,7 @@ function showLock() {
 function hideLock() {
   const ov = document.getElementById('lock-overlay');
   if (ov) ov.style.display = 'none';
+  localStorage.setItem('mg-lock-unlocked-at', String(Date.now()));
 }
 async function tryBioUnlock() {
   const err = document.getElementById('lock-error');
