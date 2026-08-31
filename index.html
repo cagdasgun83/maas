@@ -4112,6 +4112,9 @@ function renderLoans() {
   const monthLabel = formatMonth(currentId).split(' ')[0];
 
   debtsState.loans.forEach((loan, li) => {
+    // Bitiş ayı bu aydan önce olan krediler bu ayda listelenmez (geçmiş aylarda görünmeye devam eder)
+    const isFinished = loan.endMonth && currentId > loan.endMonth;
+    if (isFinished) return;
     const isActive = loan.startMonth && loan.endMonth && currentId >= loan.startMonth && currentId <= loan.endMonth;
     const remaining = isActive ? Math.max(0, monthDiff(currentId, loan.endMonth) + 1) : 0;
     const totalRemaining = remaining * num(loan.monthlyPayment);
@@ -4155,6 +4158,11 @@ function renderLoans() {
     div.innerHTML = html;
     c.appendChild(div);
   });
+
+  // Tüm krediler bu ay için bitmişse bilgi ver
+  if (debtsState.loans.length > 0 && c.children.length === 0) {
+    c.innerHTML = '<p style="color:var(--text-tertiary);font-size:13px;padding:12px 0;">Bu ay aktif kredi yok (biten krediler geçmiş aylarda görünür).</p>';
+  }
 
   // Header click → toggle
   c.querySelectorAll('[data-toggle-loan]').forEach(h => {
