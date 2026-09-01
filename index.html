@@ -2033,7 +2033,10 @@ input[type="number"]::-webkit-inner-spin-button {
         </span>
       </p>
       <div id="cards-container"></div>
-      <button class="btn-add" id="add-card">+ Yeni kart ekle</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-add" id="add-card">+ Yeni kart ekle</button>
+        <button class="btn" id="btn-manage-cats" style="font-size:12px;">⚙ Kategorileri yönet</button>
+      </div>
     </div>
 
     <!-- Krediler -->
@@ -2829,6 +2832,25 @@ input[type="number"]::-webkit-inner-spin-button {
 <div class="toast" id="toast"></div>
 
 <!-- v5.1: Eşitleme (GitHub Gist) modalı -->
+<!-- v6.3: Kategori yönetimi -->
+<div class="modal-bg" id="modal-cat">
+  <div class="modal" style="max-width:480px;">
+    <h3>Harcama kategorileri</h3>
+    <p class="section-subtitle" style="margin-bottom:12px;">Kendi kategorilerinizi ekleyin (örn. Araç Sigorta/Bakım). Standart kategoriler silinemez; eklediklerinizi kaldırabilirsiniz. Değişiklikler cihazlar arası eşitlenir.</p>
+
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <input type="text" id="cat-new" placeholder="Yeni kategori adı" maxlength="30" style="flex:1;">
+      <button class="btn btn-primary" id="cat-add" style="padding:8px 16px;">Ekle</button>
+    </div>
+
+    <div id="cat-list" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto;"></div>
+
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn" id="cat-close">Kapat</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-sync">
   <div class="modal" style="max-width:520px;">
     <h3>Cihazlar arası eşitleme</h3>
@@ -2920,12 +2942,27 @@ const COLORS = [
 ];
 const LABELS = ['Yaşama maliyeti','Yatırımlar','Borç ödemeleri','Acil fon','Öngörülmez rezerv','Kalan miktar'];
 
-const SPEND_CATEGORIES = [
+const DEFAULT_SPEND_CATEGORIES = [
   'Market', 'Benzin', 'Çocuk Giyim', 'Ayten Giyim', 'Çağdaş Giyim',
   'Otomotiv/Bakım', 'Sigorta (Trafik/Kasko)', 'BES', 'Tatil',
   'Dışarı Yemek/İçmek', 'Kozmetik/Bakım', 'Hediye', 'Ayça/Ada Sofra',
   'Ev/Mobilya', 'Fatura', 'Aidat/DoğalGaz', 'Bağış', 'Sağlık', 'Diğer'
 ];
+
+// v6.3: Kullanıcının eklediği kategoriler debtsState.customCategories içinde tutulur (eşitlenir).
+// SPEND_CATEGORIES artık canlı bir birleşik liste döndüren bir getter'dır.
+Object.defineProperty(window, 'SPEND_CATEGORIES', {
+  get() {
+    const custom = (typeof debtsState !== 'undefined' && Array.isArray(debtsState.customCategories))
+      ? debtsState.customCategories : [];
+    // "Diğer" her zaman en sonda kalsın
+    const base = DEFAULT_SPEND_CATEGORIES.filter(c => c !== 'Diğer');
+    const merged = [...base];
+    custom.forEach(c => { if (c && !merged.includes(c) && c !== 'Diğer') merged.push(c); });
+    merged.push('Diğer');
+    return merged;
+  }
+});
 
 
 function getCSS(varName) {
@@ -3782,9 +3819,7 @@ function renderCards() {
             html += '</div>';
             return;
           }
-          const catOptions = SPEND_CATEGORIES.map(c =>
-            '<option value="' + escapeHtml(c) + '"' + (sp.category === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'
-          ).join('');
+          const catOptions = catOptionsHtml(sp.category);
           html += '<div class="spend-edit" style="padding:12px;background:var(--bg-card);border:1px solid var(--accent);border-radius:var(--radius-md);display:grid;gap:8px;">';
           html += '<div class="qa-row2">';
           html += '<div><label class="field-label">Kategori</label><select data-ci="' + ci + '" data-si="' + si + '" data-k="spend-cat">' + catOptions + '</select></div>';
@@ -3844,9 +3879,7 @@ function renderCards() {
           }
 
           // DÜZENLEME GÖRÜNÜMÜ — alanlar alt alta (kaydırma yok)
-          const instCatOptions = SPEND_CATEGORIES.map(c =>
-            '<option value="' + escapeHtml(c) + '"' + ((inst.category || 'Diğer') === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'
-          ).join('');
+          const instCatOptions = catOptionsHtml(inst.category || 'Diğer');
           html += '<div class="inst-edit" style="padding:12px;background:var(--bg-card);border:1px solid var(--accent);border-radius:var(--radius-md);display:grid;gap:8px;">';
           html += '<div><label class="field-label">Açıklama</label><input type="text" placeholder="örn. iPhone" value="' + escapeHtml(inst.label || '') + '" data-ci="' + ci + '" data-ii="' + ii + '" data-k="label"></div>';
           html += '<div class="qa-row2">';
@@ -5865,6 +5898,11 @@ function attachInputs() {
     state.cashRows.push({ name: '', amount: 0, paid: false });
     save(); renderCash(); updateMetrics();
   };
+  // v6.3: kategori yönetimi
+  if ($('cat-add')) $('cat-add').onclick = addCustomCat;
+  if ($('cat-close')) $('cat-close').onclick = closeCatModal;
+  if ($('cat-new')) $('cat-new').addEventListener('keydown', e => { if (e.key === 'Enter') addCustomCat(); });
+  if ($('btn-manage-cats')) $('btn-manage-cats').onclick = openCatModal;
   $('add-card').onclick = () => {
     const newCard = { id: genId('CARD'), name: '', monthlySpends: {}, installments: [] };
     debtsState.cards.push(newCard);
@@ -8927,6 +8965,86 @@ function qaSaveTx() {
     document.getElementById('qa-tx-note').value = '';
     qaTxTotal();
   }
+}
+
+// v6.3: kategori <option> listesi — mevcut değer listede yoksa onu da ekler (veri kaybı olmasın)
+function catOptionsHtml(selected) {
+  const cats = SPEND_CATEGORIES.slice();
+  if (selected && !cats.includes(selected)) cats.unshift(selected);
+  return cats.map(c =>
+    '<option value="' + escapeHtml(c) + '"' + (selected === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'
+  ).join('');
+}
+
+// ===== v6.3: Kategori yönetimi =====
+function ensureCustomCats() {
+  if (!Array.isArray(debtsState.customCategories)) debtsState.customCategories = [];
+  return debtsState.customCategories;
+}
+function openCatModal() {
+  renderCatList();
+  document.getElementById('modal-cat').classList.add('active');
+}
+function closeCatModal() {
+  document.getElementById('modal-cat').classList.remove('active');
+}
+function renderCatList() {
+  const list = document.getElementById('cat-list');
+  if (!list) return;
+  const custom = ensureCustomCats();
+  let html = '';
+  // Standart kategoriler (silinemez)
+  DEFAULT_SPEND_CATEGORIES.forEach(c => {
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:13px;">' +
+      '<span>' + escapeHtml(c) + '</span>' +
+      '<span style="font-size:11px;color:var(--text-tertiary);">standart</span>' +
+      '</div>';
+  });
+  // Özel kategoriler (silinebilir)
+  custom.forEach((c, i) => {
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg-card);border:1px solid var(--accent);border-radius:var(--radius-md);font-size:13px;">' +
+      '<span>' + escapeHtml(c) + '</span>' +
+      '<button class="row-x" data-rmcat="' + i + '" aria-label="Sil" style="width:26px;height:26px;font-size:14px;">×</button>' +
+      '</div>';
+  });
+  list.innerHTML = html;
+  list.querySelectorAll('[data-rmcat]').forEach(b => {
+    b.onclick = () => {
+      const i = +b.dataset.rmcat;
+      const removed = ensureCustomCats()[i];
+      // Kullanımda mı kontrol et
+      let inUse = false;
+      debtsState.cards.forEach(card => {
+        Object.values(card.monthlySpendsDetail || {}).forEach(arr => {
+          (arr || []).forEach(s => { if (s.category === removed) inUse = true; });
+        });
+        (card.installments || []).forEach(inst => { if (inst.category === removed) inUse = true; });
+      });
+      const msg = inUse
+        ? '"' + removed + '" bazı harcamalarda kullanılıyor. Silerseniz o kayıtların kategorisi "Diğer" görünür (tutarlar değişmez). Silinsin mi?'
+        : '"' + removed + '" kategorisi silinsin mi?';
+      if (!confirm(msg)) return;
+      ensureCustomCats().splice(i, 1);
+      saveDebts();
+      renderCatList();
+      if (typeof renderCards === 'function') renderCards();
+    };
+  });
+}
+function addCustomCat() {
+  const inp = document.getElementById('cat-new');
+  const name = inp.value.trim();
+  if (!name) { showToast('Kategori adı girin'); return; }
+  const custom = ensureCustomCats();
+  const exists = DEFAULT_SPEND_CATEGORIES.some(c => c.toLowerCase() === name.toLowerCase())
+    || custom.some(c => c.toLowerCase() === name.toLowerCase());
+  if (exists) { showToast('Bu kategori zaten var'); return; }
+  custom.push(name);
+  saveDebts();
+  inp.value = '';
+  renderCatList();
+  if (typeof renderCards === 'function') renderCards();
+  showToast('Kategori eklendi: ' + name);
 }
 
 // ---- Eşitleme modalı ----
