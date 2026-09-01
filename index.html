@@ -3114,6 +3114,21 @@ function setDebtPaid(type, id, ym, paid) {
   saveDebts();
 }
 
+// v6.0: Kart için o ay yapılan kısmi ödeme (asgari vb.). null = kayıt yok.
+function getCardPaidAmount(cardId, ym) {
+  if (!debtsState.cardPayments || !debtsState.cardPayments[ym]) return null;
+  const v = debtsState.cardPayments[ym][cardId];
+  return (v === undefined || v === null) ? null : num(v);
+}
+function setCardPaidAmount(cardId, ym, amount) {
+  if (!debtsState.cardPayments) debtsState.cardPayments = {};
+  if (!debtsState.cardPayments[ym]) debtsState.cardPayments[ym] = {};
+  if (amount === null) delete debtsState.cardPayments[ym][cardId];
+  else debtsState.cardPayments[ym][cardId] = num(amount);
+  if (Object.keys(debtsState.cardPayments[ym]).length === 0) delete debtsState.cardPayments[ym];
+  saveDebts();
+}
+
 // Kalan Bakiye = Maaş − tickli (ödenmiş) tüm kalemler
 function totalPaidThisMonth() {
   let total = 0;
@@ -3636,6 +3651,30 @@ function renderCards() {
       html += '<label class="field-label">Kart adı</label><input type="text" placeholder="örn. Garanti Bonus" value="' + escapeHtml(card.name || '') + '" data-ci="' + ci + '" data-k="name">';
       html += '</div>';
 
+      // v6.0: Bu ay ödeme (asgari / kısmi ödeme takibi)
+      {
+        const paidAmt = getCardPaidAmount(card.id, currentId);
+        const fullPaid = isDebtPaid('card', card.id, currentId);
+        const effectivePaid = fullPaid ? monthlyTotal : (paidAmt !== null ? paidAmt : 0);
+        const remaining = Math.max(0, monthlyTotal - effectivePaid);
+        html += '<div style="border-top:0.5px solid var(--border);padding-top:10px;margin-bottom:14px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+        html += '<span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);">Bu ay ödeme</span>';
+        html += '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);">Ekstre: ' + fmtTL(monthlyTotal) + '</span>';
+        html += '</div>';
+        html += '<div class="qa-row2" style="align-items:end;">';
+        html += '<div><label class="field-label">Ödediğim tutar (₺)</label>' +
+          '<input type="number" min="0" step="50" placeholder="0" value="' + (fullPaid ? Math.round(monthlyTotal) : (paidAmt !== null ? paidAmt : '')) + '" data-pay-card="' + card.id + '"' + (fullPaid ? ' disabled' : '') + '></div>';
+        html += '<div style="display:flex;flex-direction:column;gap:4px;">' +
+          '<button class="btn" data-payfull-card="' + card.id + '" style="padding:8px;font-size:12px;">Tamamını ödedim</button>' +
+          '</div>';
+        html += '</div>';
+        if (remaining > 0.5 && (paidAmt !== null || fullPaid)) {
+          html += '<div style="margin-top:8px;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-md);font-size:12px;color:var(--warning-text, #b8860b);font-family:var(--font-mono);">Kalan borç: ' + fmtTL(remaining) + ' · yeni ay açılınca bu karta devredilir</div>';
+        }
+        html += '</div>';
+      }
+
       // Bu ay harcama — kategori detay listesi
       const spends = getCardSpendDetails(card, currentId);
       const spendTotal = spends.reduce((a, s) => a + num(s.amount), 0);
@@ -3884,6 +3923,28 @@ function renderCards() {
         if (nameDiv) nameDiv.style.textDecoration = e.target.checked ? 'line-through' : '';
       }
       updateKalanBakiye();
+    };
+  });
+  // v6.0: kısmi ödeme tutarı girişi
+  c.querySelectorAll('[data-pay-card]').forEach(inp => {
+    inp.onchange = (e) => {
+      e.stopPropagation();
+      const cardId = e.target.dataset.payCard;
+      const val = e.target.value.trim();
+      setCardPaidAmount(cardId, currentId, val === '' ? null : num(val));
+      // Kısmi ödeme girildiyse "tamamı ödendi" işaretini kaldır (çelişmesin)
+      if (val !== '' && isDebtPaid('card', cardId, currentId)) setDebtPaid('card', cardId, currentId, false);
+      renderCards(); updateMetrics();
+    };
+  });
+  // v6.0: "Tamamını ödedim" kısayolu
+  c.querySelectorAll('[data-payfull-card]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const cardId = e.target.dataset.payfullCard;
+      setCardPaidAmount(cardId, currentId, null); // kısmi kaydı temizle
+      setDebtPaid('card', cardId, currentId, true);
+      renderCards(); updateMetrics();
     };
   });
   c.querySelectorAll('[data-rm-card]').forEach(b => {
@@ -5855,6 +5916,37 @@ function attachInputs() {
       fresh.incomeAyten = num(lastMonth.incomeAyten);
       fresh.incomeAytenEk = 0; // ek ders her ay sıfırlanır
       fresh.income = fresh.incomeCagdas + fresh.incomeAyten;
+
+      // v6.0: Önceki ay tam ödenmeyen kart borcunu yeni aya "devir" olarak taşı
+      const prevYm = lastMonth.id;
+      let carriedAny = false;
+      debtsState.cards.forEach(card => {
+        // Önceki ayın ekstre toplamı (o ayki harcama + o ay aktif taksit dilimleri)
+        let stmt = getCardSpend(card, prevYm);
+        (card.installments || []).forEach(inst => {
+          if (!inst.startMonth || !num(inst.amount) || !num(inst.totalCount)) return;
+          const idx = monthDiff(inst.startMonth, prevYm);
+          if (idx >= 0 && idx < num(inst.totalCount)) stmt += num(inst.amount) / num(inst.totalCount);
+        });
+        if (stmt <= 0) return;
+        const fullPaid = isDebtPaid('card', card.id, prevYm);
+        if (fullPaid) return; // tamamı ödenmiş, devir yok
+        const paidAmt = getCardPaidAmount(card.id, prevYm);
+        if (paidAmt === null) return; // hiç işaretlenmemiş ay — devir hesaplama (kullanıcı takip etmiyor olabilir)
+        const remaining = Math.max(0, stmt - paidAmt);
+        if (remaining > 0.5) {
+          if (!card.monthlySpendsDetail) card.monthlySpendsDetail = {};
+          if (!Array.isArray(card.monthlySpendsDetail[v])) card.monthlySpendsDetail[v] = [];
+          card.monthlySpendsDetail[v].push({
+            id: genId('SP'),
+            category: 'Diğer',
+            amount: Math.round(remaining),
+            note: 'Önceki aydan devir (' + formatMonth(prevYm) + ')'
+          });
+          carriedAny = true;
+        }
+      });
+      if (carriedAny) saveDebts();
     }
     await dbPut(fresh);
     currentId = v;
