@@ -3023,6 +3023,7 @@ let currentId = null;
 let currentStep = 0;
 let state = blankState();
 let monthsCache = []; // Tüm aylık kayıtlar — projeksiyon için cache
+let knownMonthIds = new Set(); // v6.1: hangi aylar mevcut (devir zinciri için)
 
 // Borçlar — aylar arası ortak (A yaklaşımı)
 let debtsState = {
@@ -3127,6 +3128,42 @@ function setCardPaidAmount(cardId, ym, amount) {
   else debtsState.cardPayments[ym][cardId] = num(amount);
   if (Object.keys(debtsState.cardPayments[ym]).length === 0) delete debtsState.cardPayments[ym];
   saveDebts();
+}
+
+// v6.1: Bir ayın bir önceki ay etiketi (YYYY-MM)
+function prevMonthId(ym) {
+  const p = String(ym).split('-').map(Number);
+  if (!p[0] || !p[1]) return null;
+  let y = p[0], m = p[1] - 1;
+  if (m < 1) { m = 12; y--; }
+  return y + '-' + String(m).padStart(2, '0');
+}
+
+// Kartın o aydaki kendi ekstresi (devir HARİÇ): o ay harcama + aktif taksit dilimleri
+function cardOwnStatement(card, ym) {
+  let stmt = getCardSpend(card, ym);
+  (card.installments || []).forEach(inst => {
+    if (!inst.startMonth || !num(inst.amount) || !num(inst.totalCount)) return;
+    const idx = monthDiff(inst.startMonth, ym);
+    if (idx >= 0 && idx < num(inst.totalCount)) stmt += num(inst.amount) / num(inst.totalCount);
+  });
+  return stmt;
+}
+
+// Kartın bu aya önceki aydan gelen devri (canlı). Zincirlemeyi 24 ay ile sınırla.
+function getCardCarry(card, ym, _depth) {
+  _depth = _depth || 0;
+  if (_depth > 24) return 0;
+  const prev = prevMonthId(ym);
+  if (!prev) return 0;
+  // Önceki ay hiç açılmamışsa devir yok
+  if (!knownMonthIds || !knownMonthIds.has(prev)) return 0;
+  const fullPaid = isDebtPaid('card', card.id, prev);
+  if (fullPaid) return 0;
+  const paidAmt = getCardPaidAmount(card.id, prev);
+  if (paidAmt === null) return 0; // o ay hiç işaretlenmemiş → devir hesaplanmaz
+  const prevStatement = cardOwnStatement(card, prev) + getCardCarry(card, prev, _depth + 1);
+  return Math.max(0, prevStatement - paidAmt);
 }
 
 // Kalan Bakiye = Maaş − tickli (ödenmiş) tüm kalemler
@@ -3335,6 +3372,7 @@ function cardTotalForMonth(yearMonth, includeMonthlySpend) {
   if (includeMonthlySpend) {
     debtsState.cards.forEach(card => {
       total += getCardSpend(card, yearMonth);
+      total += getCardCarry(card, yearMonth); // v6.1: önceki aydan devir
     });
   }
   return total;
@@ -3602,6 +3640,7 @@ function renderCards() {
           t += num(inst.amount) / num(inst.totalCount);
         }
       });
+      t += getCardCarry(card, currentId); // v6.1: önceki aydan devir
       return t;
     })();
 
@@ -3626,6 +3665,7 @@ function renderCards() {
       return sum;
     }, 0);
     const cardSpendThisMonth = getCardSpend(card, currentId);
+    const cardCarryThisMonth = getCardCarry(card, currentId);
 
     let html = '';
 
@@ -3636,7 +3676,7 @@ function renderCards() {
     html += '<div style="text-align:right;">' +
       '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.08em;">' + monthLabel + ' toplam</div>' +
       '<div data-card-total="' + ci + '" style="font-family:var(--font-mono);font-size:16px;font-weight:500;color:var(--accent);">' + fmtTL(monthlyTotal) + '</div>' +
-      '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);margin-top:2px;">Taksit: ' + fmtTL(cardInstThisMonth) + ' · Harcama: ' + fmtTL(cardSpendThisMonth) + '</div>' +
+      '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);margin-top:2px;">Taksit: ' + fmtTL(cardInstThisMonth) + ' · Harcama: ' + fmtTL(cardSpendThisMonth) + (cardCarryThisMonth > 0.5 ? ' · Devir: ' + fmtTL(cardCarryThisMonth) : '') + '</div>' +
       '</div>';
     html += '<input type="checkbox" class="debt-tick" ' + (cardPaid ? 'checked' : '') + ' data-paid-card="' + card.id + '" aria-label="Ödendi" title="Bu ay ödendi mi?" onclick="event.stopPropagation();">';
     html += '<button class="row-x" data-rm-card="' + ci + '" aria-label="Kartı sil" onclick="event.stopPropagation();">×</button>';
@@ -3662,6 +3702,9 @@ function renderCards() {
         html += '<span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);">Bu ay ödeme</span>';
         html += '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);">Ekstre: ' + fmtTL(monthlyTotal) + '</span>';
         html += '</div>';
+        if (cardCarryThisMonth > 0.5) {
+          html += '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px;font-family:var(--font-mono);">↳ İçinde önceki aydan devir: ' + fmtTL(cardCarryThisMonth) + '</div>';
+        }
         html += '<div class="qa-row2" style="align-items:end;">';
         html += '<div><label class="field-label">Ödediğim tutar (₺)</label>' +
           '<input type="number" min="0" step="50" placeholder="0" value="' + (fullPaid ? Math.round(monthlyTotal) : (paidAmt !== null ? paidAmt : '')) + '" data-pay-card="' + card.id + '"' + (fullPaid ? ' disabled' : '') + '></div>';
@@ -5006,6 +5049,7 @@ async function loadMonths(selectId) {
   // Sadece ay kayıtları (portfolio_state, debts_state gibi diğer key'leri çıkar)
   const all = allRaw.filter(r => r.id && /^\d{4}-\d{2}$/.test(r.id));
   monthsCache = all.slice(); // Projeksiyon için cache
+  knownMonthIds = new Set(all.map(m => m.id)); // v6.1: devir hesabı için
   const sel = $('month-select');
   sel.innerHTML = '';
   all.sort((a, b) => b.id.localeCompare(a.id));
@@ -5916,37 +5960,7 @@ function attachInputs() {
       fresh.incomeAyten = num(lastMonth.incomeAyten);
       fresh.incomeAytenEk = 0; // ek ders her ay sıfırlanır
       fresh.income = fresh.incomeCagdas + fresh.incomeAyten;
-
-      // v6.0: Önceki ay tam ödenmeyen kart borcunu yeni aya "devir" olarak taşı
-      const prevYm = lastMonth.id;
-      let carriedAny = false;
-      debtsState.cards.forEach(card => {
-        // Önceki ayın ekstre toplamı (o ayki harcama + o ay aktif taksit dilimleri)
-        let stmt = getCardSpend(card, prevYm);
-        (card.installments || []).forEach(inst => {
-          if (!inst.startMonth || !num(inst.amount) || !num(inst.totalCount)) return;
-          const idx = monthDiff(inst.startMonth, prevYm);
-          if (idx >= 0 && idx < num(inst.totalCount)) stmt += num(inst.amount) / num(inst.totalCount);
-        });
-        if (stmt <= 0) return;
-        const fullPaid = isDebtPaid('card', card.id, prevYm);
-        if (fullPaid) return; // tamamı ödenmiş, devir yok
-        const paidAmt = getCardPaidAmount(card.id, prevYm);
-        if (paidAmt === null) return; // hiç işaretlenmemiş ay — devir hesaplama (kullanıcı takip etmiyor olabilir)
-        const remaining = Math.max(0, stmt - paidAmt);
-        if (remaining > 0.5) {
-          if (!card.monthlySpendsDetail) card.monthlySpendsDetail = {};
-          if (!Array.isArray(card.monthlySpendsDetail[v])) card.monthlySpendsDetail[v] = [];
-          card.monthlySpendsDetail[v].push({
-            id: genId('SP'),
-            category: 'Diğer',
-            amount: Math.round(remaining),
-            note: 'Önceki aydan devir (' + formatMonth(prevYm) + ')'
-          });
-          carriedAny = true;
-        }
-      });
-      if (carriedAny) saveDebts();
+      // Not: Kart devri artık canlı hesaplanıyor (getCardCarry) — yazma anında bir şey eklenmez.
     }
     await dbPut(fresh);
     currentId = v;
