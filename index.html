@@ -556,6 +556,28 @@ input[type="number"]::-webkit-inner-spin-button {
   opacity: 0.55;
   border-left: 2px solid var(--success-text) !important;
 }
+.debt-partial {
+  border-left: 2px solid var(--warning-text, #b8860b) !important;
+}
+.pay-pill {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-tertiary);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.pay-pill.pay-full { background: color-mix(in srgb, var(--success-text) 12%, transparent); }
+.pay-pill.pay-partial { background: color-mix(in srgb, var(--warning-text, #b8860b) 14%, transparent); }
 .debt-tick {
   width: 20px;
   height: 20px;
@@ -3654,7 +3676,6 @@ function renderCards() {
     const monthLabel = formatMonth(currentId).split(' ')[0];
     const cardPaid = isDebtPaid('card', card.id, currentId);
     if (cardPaid) cardDiv.classList.add('debt-paid');
-
     // Bu kartın ay içi kırılımı: taksit dilimi + bu ay harcama
     const cardInstThisMonth = (card.installments || []).reduce((sum, inst) => {
       if (!inst.startMonth || !num(inst.amount) || !num(inst.totalCount)) return sum;
@@ -3667,18 +3688,30 @@ function renderCards() {
     const cardSpendThisMonth = getCardSpend(card, currentId);
     const cardCarryThisMonth = getCardCarry(card, currentId);
 
+    // v6.2: 3 durumlu ödeme göstergesi — ödenmedi / kısmen / tam
+    const _paidAmt = getCardPaidAmount(card.id, currentId);
+    let payState = 'none'; // none | partial | full
+    if (cardPaid) payState = 'full';
+    else if (_paidAmt !== null && _paidAmt > 0) {
+      payState = (_paidAmt + 0.5 >= monthlyTotal) ? 'full' : 'partial';
+    }
+    const payIcon = payState === 'full' ? '✓' : (payState === 'partial' ? '½' : '');
+    const payColor = payState === 'full' ? 'var(--success-text)' : (payState === 'partial' ? 'var(--warning-text, #b8860b)' : 'var(--text-tertiary)');
+    const payTitle = payState === 'full' ? 'Tam ödendi' : (payState === 'partial' ? 'Kısmen ödendi (kalan devreder)' : 'Ödenmedi');
+    if (payState === 'partial') cardDiv.classList.add('debt-partial');
+
     let html = '';
 
     // ÖZET BAR (her zaman görünür, tıklanabilir)
     html += '<div class="card-header" data-toggle-card="' + ci + '" style="display:grid;grid-template-columns:auto 1fr auto auto auto;gap:14px;align-items:center;padding:12px 14px;cursor:pointer;background:var(--bg-card);border-bottom:' + (isExpanded ? '0.5px solid var(--border)' : 'none') + ';">';
     html += '<span style="font-family:var(--font-mono);font-size:14px;color:var(--text-tertiary);transition:transform 0.2s;display:inline-block;transform:' + (isExpanded ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>';
-    html += '<div style="font-weight:500;' + (cardPaid ? 'text-decoration:line-through;' : '') + '">' + escapeHtml(card.name || '(isimsiz kart)') + '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);margin-left:10px;font-weight:400;">' + activeInstCount + ' aktif taksit</span></div>';
+    html += '<div style="font-weight:500;' + (payState === 'full' ? 'text-decoration:line-through;' : '') + '">' + escapeHtml(card.name || '(isimsiz kart)') + '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);margin-left:10px;font-weight:400;">' + activeInstCount + ' aktif taksit</span></div>';
     html += '<div style="text-align:right;">' +
       '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.08em;">' + monthLabel + ' toplam</div>' +
       '<div data-card-total="' + ci + '" style="font-family:var(--font-mono);font-size:16px;font-weight:500;color:var(--accent);">' + fmtTL(monthlyTotal) + '</div>' +
       '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);margin-top:2px;">Taksit: ' + fmtTL(cardInstThisMonth) + ' · Harcama: ' + fmtTL(cardSpendThisMonth) + (cardCarryThisMonth > 0.5 ? ' · Devir: ' + fmtTL(cardCarryThisMonth) : '') + '</div>' +
       '</div>';
-    html += '<input type="checkbox" class="debt-tick" ' + (cardPaid ? 'checked' : '') + ' data-paid-card="' + card.id + '" aria-label="Ödendi" title="Bu ay ödendi mi?" onclick="event.stopPropagation();">';
+    html += '<button class="pay-pill pay-' + payState + '" data-paycycle-card="' + card.id + '" title="' + payTitle + '" aria-label="' + payTitle + '" style="color:' + payColor + ';border-color:' + payColor + ';" onclick="event.stopPropagation();">' + payIcon + '</button>';
     html += '<button class="row-x" data-rm-card="' + ci + '" aria-label="Kartı sil" onclick="event.stopPropagation();">×</button>';
     html += '</div>';
 
@@ -3952,20 +3985,22 @@ function renderCards() {
       }
     };
   });
-  c.querySelectorAll('input[type="checkbox"][data-paid-card]').forEach(inp => {
-    inp.onchange = (e) => {
+  // v6.2: 3 durumlu ödeme pili — dokununca tam ödendi ↔ ödenmedi
+  c.querySelectorAll('[data-paycycle-card]').forEach(b => {
+    b.onclick = (e) => {
       e.stopPropagation();
-      const cardId = e.target.dataset.paidCard;
-      setDebtPaid('card', cardId, currentId, e.target.checked);
-      // Sadece bu kartın görünümünü güncelle (re-render etmeden)
-      const cardDiv = e.target.closest('.debt-card-item');
-      if (cardDiv) {
-        if (e.target.checked) cardDiv.classList.add('debt-paid');
-        else cardDiv.classList.remove('debt-paid');
-        const nameDiv = cardDiv.querySelector('.card-header > div:nth-child(2)');
-        if (nameDiv) nameDiv.style.textDecoration = e.target.checked ? 'line-through' : '';
+      const cardId = e.target.dataset.paycycleCard;
+      const isFull = isDebtPaid('card', cardId, currentId);
+      if (isFull) {
+        // Tam → ödenmedi (kısmi tutar da temizlenir)
+        setDebtPaid('card', cardId, currentId, false);
+        setCardPaidAmount(cardId, currentId, null);
+      } else {
+        // Ödenmedi/kısmi → tam ödendi
+        setCardPaidAmount(cardId, currentId, null);
+        setDebtPaid('card', cardId, currentId, true);
       }
-      updateKalanBakiye();
+      renderCards(); updateMetrics();
     };
   });
   // v6.0: kısmi ödeme tutarı girişi
