@@ -3119,6 +3119,11 @@ function totalCardSpendForMonth(ym) {
   return debtsState.cards.reduce((a, c) => a + getCardSpend(c, ym), 0);
 }
 
+// v6.2: Bir ay için tüm kartların önceki aydan devir toplamı
+function totalCardCarryForMonth(ym) {
+  return debtsState.cards.reduce((a, c) => a + getCardCarry(c, ym), 0);
+}
+
 // Borç ödeme durumu — ay bazlı (kart toplam ve krediler için)
 function isDebtPaid(type, id, ym) {
   if (!debtsState.paidStatus || !debtsState.paidStatus[ym]) return false;
@@ -4960,7 +4965,7 @@ function updateProjectionRow(ym) {
   const income = num(state.income12mo && state.income12mo[ym]) || defaultIncome;
   const cardI = cardInstallmentForMonth(ym);
   const cardSpend = totalCardSpendForMonth(ym);
-  const card = cardI + cardSpend;
+  const card = cardI + cardSpend + totalCardCarryForMonth(ym);
   const loan = loanTotalForMonth(ym);
   const saving = income - fixedCost - card - loan - investCost - efMonthly - buffer;
 
@@ -5000,7 +5005,7 @@ function computeProjectionRows() {
     const pInvest = num(rec.bes) + num(rec.fund) + num(rec.usstock) + num(rec.commodity);
     const pBuffer = num(rec.buffer);
     const pEfMonthly = num(rec.efMonthly);
-    const card = cardInstallmentForMonth(rec.id) + totalCardSpendForMonth(rec.id);
+    const card = cardInstallmentForMonth(rec.id) + totalCardSpendForMonth(rec.id) + totalCardCarryForMonth(rec.id);
     const loan = loanTotalForMonth(rec.id);
     const saving = pIncome - pFixed - card - loan - pInvest - pEfMonthly - pBuffer;
     return { ym: rec.id, income: pIncome, fixedCost: pFixed, card, loan, invest: pInvest, efMonthly: pEfMonthly, buffer: pBuffer, saving, isPast: true };
@@ -5008,7 +5013,7 @@ function computeProjectionRows() {
 
   const futureRows = futureMonths.map(ym => {
     const income = num(state.income12mo && state.income12mo[ym]) || defaultIncome;
-    const card = cardInstallmentForMonth(ym) + totalCardSpendForMonth(ym);
+    const card = cardInstallmentForMonth(ym) + totalCardSpendForMonth(ym) + totalCardCarryForMonth(ym);
     const loan = loanTotalForMonth(ym);
     const saving = income - fixedCost - card - loan - investCost - efMonthly - buffer;
     return { ym, income, fixedCost, card, loan, invest: investCost, efMonthly, buffer, saving, isPast: false };
@@ -5528,7 +5533,7 @@ async function exportToExcel() {
       const income = num(state.income12mo && state.income12mo[ym]) || num(state.income);
       const cardI = cardInstallmentForMonth(ym);
       const cardSpend = totalCardSpendForMonth(ym);
-      const card = cardI + cardSpend;
+      const card = cardI + cardSpend + totalCardCarryForMonth(ym);
       const loan = loanTotalForMonth(ym);
       const saving = income - fxdC - card - loan - invC - efmC - bufC;
       projSheet.push([formatMonth(ym), Math.round(income), Math.round(fxdC), Math.round(card), Math.round(loan), Math.round(invC), Math.round(efmC), Math.round(bufC), Math.round(saving)]);
