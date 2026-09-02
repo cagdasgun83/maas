@@ -566,6 +566,31 @@ input[type="number"]::-webkit-inner-spin-button {
 .debt-partial {
   border-left: 2px solid var(--warning-text, #b8860b) !important;
 }
+.debt-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+.debt-summary .ds-block { display: flex; flex-direction: column; gap: 2px; }
+.debt-summary .ds-block.right { align-items: flex-end; }
+.debt-summary .ds-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.debt-summary .ds-value {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 600;
+}
+.debt-summary .ds-value.remaining { color: var(--accent); }
 .pay-pill {
   width: 26px;
   height: 26px;
@@ -2039,6 +2064,7 @@ input[type="number"]::-webkit-inner-spin-button {
           <button class="btn-ghost btn" id="btn-expand-all-cards" style="font-size:11px;padding:2px 8px;height:auto;">Tümünü aç</button>
         </span>
       </p>
+      <div id="cards-summary" class="debt-summary"></div>
       <div id="cards-container"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn-add" id="add-card">+ Yeni kart ekle</button>
@@ -2054,6 +2080,7 @@ input[type="number"]::-webkit-inner-spin-button {
           <button class="btn-ghost btn" id="btn-expand-all-loans" style="font-size:11px;padding:2px 8px;height:auto;">Tümünü aç</button>
         </span>
       </p>
+      <div id="loans-summary" class="debt-summary"></div>
       <div id="loans-container"></div>
       <button class="btn-add" id="add-loan">+ Yeni kredi ekle</button>
     </div>
@@ -3704,7 +3731,56 @@ function genId(prefix) {
 const spendEditing = new Set();
 const instEditing = new Set();
 
+// v6.5: Kart ve kredi bölümleri için üst özet (toplam / kalan)
+function renderDebtSummaries() {
+  const ym = currentId;
+  // --- Kartlar ---
+  let cardTotal = 0, cardRemaining = 0;
+  (debtsState.cards || []).forEach(card => {
+    const stmt = cardOwnStatement(card, ym) + getCardCarry(card, ym);
+    if (stmt <= 0.5) return;
+    cardTotal += stmt;
+    const fullPaid = isDebtPaid('card', card.id, ym);
+    if (fullPaid) return;
+    const paidAmt = getCardPaidAmount(card.id, ym);
+    const paid = (paidAmt !== null) ? paidAmt : 0;
+    cardRemaining += Math.max(0, stmt - paid);
+  });
+  const cs = $('cards-summary');
+  if (cs) {
+    if (cardTotal <= 0.5) { cs.style.display = 'none'; }
+    else {
+      cs.style.display = 'flex';
+      cs.innerHTML =
+        '<div class="ds-block"><span class="ds-label">Toplam borç</span><span class="ds-value">' + fmtTL(cardTotal) + '</span></div>' +
+        '<div class="ds-block right"><span class="ds-label">Kalan</span><span class="ds-value remaining">' + fmtTL(cardRemaining) + '</span></div>';
+    }
+  }
+  // --- Krediler ---
+  let loanTotal = 0, loanRemaining = 0;
+  (debtsState.loans || []).forEach(loan => {
+    if (loan.endMonth && ym > loan.endMonth) return; // bitmiş
+    const isActive = loan.startMonth && loan.endMonth && ym >= loan.startMonth && ym <= loan.endMonth;
+    if (!isActive) return;
+    const pay = num(loan.monthlyPayment);
+    if (pay <= 0) return;
+    loanTotal += pay;
+    if (!isDebtPaid('loan', loan.id, ym)) loanRemaining += pay;
+  });
+  const ls = $('loans-summary');
+  if (ls) {
+    if (loanTotal <= 0.5) { ls.style.display = 'none'; }
+    else {
+      ls.style.display = 'flex';
+      ls.innerHTML =
+        '<div class="ds-block"><span class="ds-label">Toplam taksit</span><span class="ds-value">' + fmtTL(loanTotal) + '</span></div>' +
+        '<div class="ds-block right"><span class="ds-label">Kalan</span><span class="ds-value remaining">' + fmtTL(loanRemaining) + '</span></div>';
+    }
+  }
+}
+
 function renderCards() {
+  renderDebtSummaries();
   const c = $('cards-container');
   c.innerHTML = '';
   if (debtsState.cards.length === 0) {
@@ -4303,6 +4379,7 @@ function renderProjectionLight() {
 }
 
 function renderLoans() {
+  renderDebtSummaries();
   const c = $('loans-container');
   c.innerHTML = '';
   if (debtsState.loans.length === 0) {
