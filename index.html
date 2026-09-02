@@ -610,6 +610,54 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 .pay-pill.pay-full { background: color-mix(in srgb, var(--success-text) 12%, transparent); }
 .pay-pill.pay-partial { background: color-mix(in srgb, var(--warning-text, #b8860b) 14%, transparent); }
+.reorder-ctrl {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.reorder-btn {
+  width: 24px;
+  height: 17px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.reorder-btn:hover:not(:disabled) { background: var(--bg-secondary); color: var(--accent); }
+.reorder-btn:disabled { opacity: 0.25; cursor: default; }
+.color-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.color-swatch:active { transform: scale(0.9); }
+.color-swatch.selected {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--bg-secondary) inset;
+}
+.color-swatch.color-none {
+  background: var(--bg-card);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-strong);
+}
+.color-swatch.color-none.selected { border-color: var(--text-primary); border-style: solid; }
 .debt-tick {
   width: 20px;
   height: 20px;
@@ -2977,6 +3025,8 @@ const COLORS = [
 ];
 const LABELS = ['Yaşama maliyeti','Yatırımlar','Borç ödemeleri','Acil fon','Öngörülmez rezerv','Kalan miktar'];
 
+const CARD_COLORS = ['#e05a5a', '#e0913a', '#d4b13a', '#4a9d5b', '#3a9d9d', '#4a78d6', '#7a5ad6', '#c04a9d', '#8a8a8a'];
+
 const DEFAULT_SPEND_CATEGORIES = [
   'Market', 'Benzin', 'Çocuk Giyim', 'Ayten Giyim', 'Çağdaş Giyim',
   'Otomotiv/Bakım', 'Sigorta (Trafik/Kasko)', 'BES', 'Tatil',
@@ -3793,7 +3843,9 @@ function renderCards() {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'debt-card-item';
     cardDiv.dataset.cardId = card.id;
-    cardDiv.style.cssText = 'border:0.5px solid var(--border);border-radius:var(--radius-md);margin-bottom:10px;background:var(--bg-secondary);overflow:hidden;';
+    const cardColor = card.color || '';
+    cardDiv.style.cssText = 'border:0.5px solid var(--border);border-radius:var(--radius-md);margin-bottom:10px;background:var(--bg-secondary);overflow:hidden;' +
+      (cardColor ? 'border-left:4px solid ' + cardColor + ';' : '');
 
     const monthlyTotal = (() => {
       let t = getCardSpend(card, currentId);
@@ -3845,9 +3897,13 @@ function renderCards() {
     let html = '';
 
     // ÖZET BAR (her zaman görünür, tıklanabilir)
-    html += '<div class="card-header" data-toggle-card="' + ci + '" style="display:grid;grid-template-columns:auto 1fr auto auto auto;gap:14px;align-items:center;padding:12px 14px;cursor:pointer;background:var(--bg-card);border-bottom:' + (isExpanded ? '0.5px solid var(--border)' : 'none') + ';">';
+    html += '<div class="card-header" data-toggle-card="' + ci + '" style="display:grid;grid-template-columns:auto auto 1fr auto auto auto;gap:10px;align-items:center;padding:12px 14px;cursor:pointer;background:var(--bg-card);border-bottom:' + (isExpanded ? '0.5px solid var(--border)' : 'none') + ';">';
     html += '<span style="font-family:var(--font-mono);font-size:14px;color:var(--text-tertiary);transition:transform 0.2s;display:inline-block;transform:' + (isExpanded ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>';
-    html += '<div style="font-weight:500;' + (payState === 'full' ? 'text-decoration:line-through;' : '') + '">' + escapeHtml(card.name || '(isimsiz kart)') + '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);margin-left:10px;font-weight:400;">' + activeInstCount + ' aktif taksit</span></div>';
+    html += '<span class="reorder-ctrl">' +
+      '<button class="reorder-btn" data-move-card-up="' + ci + '" aria-label="Yukarı taşı" title="Yukarı taşı"' + (ci === 0 ? ' disabled' : '') + ' onclick="event.stopPropagation();">⌃</button>' +
+      '<button class="reorder-btn" data-move-card-down="' + ci + '" aria-label="Aşağı taşı" title="Aşağı taşı"' + (ci === debtsState.cards.length - 1 ? ' disabled' : '') + ' onclick="event.stopPropagation();">⌄</button>' +
+      '</span>';
+    html += '<div class="card-name-cell" style="font-weight:500;' + (payState === 'full' ? 'text-decoration:line-through;' : '') + '">' + (cardColor ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + cardColor + ';margin-right:7px;vertical-align:middle;"></span>' : '') + escapeHtml(card.name || '(isimsiz kart)') + '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);margin-left:10px;font-weight:400;">' + activeInstCount + ' aktif taksit</span></div>';
     html += '<div style="text-align:right;">' +
       '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.08em;">' + monthLabel + ' toplam</div>' +
       '<div data-card-total="' + ci + '" style="font-family:var(--font-mono);font-size:16px;font-weight:500;color:var(--accent);">' + fmtTL(monthlyTotal) + '</div>' +
@@ -3864,6 +3920,18 @@ function renderCards() {
       // Kart adı
       html += '<div style="margin-bottom:10px;">';
       html += '<label class="field-label">Kart adı</label><input type="text" placeholder="örn. Garanti Bonus" value="' + escapeHtml(card.name || '') + '" data-ci="' + ci + '" data-k="name">';
+      html += '</div>';
+
+      // v6.7: Kart rengi
+      html += '<div style="margin-bottom:12px;">';
+      html += '<label class="field-label">Renk</label>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+      CARD_COLORS.forEach(col => {
+        const sel = (card.color === col);
+        html += '<button class="color-swatch' + (sel ? ' selected' : '') + '" data-color-card="' + card.id + '" data-color="' + col + '" title="Renk seç" style="background:' + col + ';" onclick="event.stopPropagation();"></button>';
+      });
+      html += '<button class="color-swatch color-none' + (!card.color ? ' selected' : '') + '" data-color-card="' + card.id + '" data-color="" title="Renk yok" onclick="event.stopPropagation();">✕</button>';
+      html += '</div>';
       html += '</div>';
 
       // v6.0: Bu ay ödeme (asgari / kısmi ödeme takibi)
@@ -4020,6 +4088,27 @@ function renderCards() {
       renderCards();
     };
   });
+  // v6.6: kart sıralama (yukarı/aşağı)
+  c.querySelectorAll('[data-move-card-up]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const i = +b.dataset.moveCardUp;
+      if (i > 0) {
+        [debtsState.cards[i - 1], debtsState.cards[i]] = [debtsState.cards[i], debtsState.cards[i - 1]];
+        saveDebts(); renderCards(); updateMetrics();
+      }
+    };
+  });
+  c.querySelectorAll('[data-move-card-down]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const i = +b.dataset.moveCardDown;
+      if (i < debtsState.cards.length - 1) {
+        [debtsState.cards[i + 1], debtsState.cards[i]] = [debtsState.cards[i], debtsState.cards[i + 1]];
+        saveDebts(); renderCards(); updateMetrics();
+      }
+    };
+  });
 
   // Input handlers — input ve select dahil
   c.querySelectorAll('input[data-ci][data-k], select[data-ci][data-k]').forEach(inp => {
@@ -4073,7 +4162,7 @@ function renderCards() {
       updateCardTotals();
       // Kart adı değişirse header'da da görünmeli
       if (k === 'name' && ii === null) {
-        const headerName = c.querySelector('[data-toggle-card="' + ci + '"] > div:nth-child(2)');
+        const headerName = c.querySelector('[data-toggle-card="' + ci + '"] .card-name-cell');
         if (headerName) {
           const activeInstCount = (debtsState.cards[ci].installments || []).filter(inst => {
             if (!inst.startMonth || !num(inst.totalCount)) return false;
@@ -4163,6 +4252,20 @@ function renderCards() {
       renderCards(); updateMetrics();
     };
   });
+  // v6.7: kart rengi seçimi
+  c.querySelectorAll('[data-color-card]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const cardId = b.dataset.colorCard;
+      const col = b.dataset.color;
+      const card = debtsState.cards.find(x => x.id === cardId);
+      if (card) {
+        if (col) card.color = col; else delete card.color;
+        saveDebts(); renderCards();
+      }
+    };
+  });
+  // v6.7: kart rengi seçimi bitti
   c.querySelectorAll('[data-rm-card]').forEach(b => {
     b.onclick = (e) => {
       e.stopPropagation();
@@ -4408,9 +4511,13 @@ function renderLoans() {
     let html = '';
 
     // ÖZET BAR (her zaman görünür, tıklanabilir)
-    html += '<div class="card-header" data-toggle-loan="' + li + '" style="display:grid;grid-template-columns:auto 1fr auto auto auto;gap:14px;align-items:center;padding:12px 14px;cursor:pointer;background:var(--bg-card);border-bottom:' + (isExpanded ? '0.5px solid var(--border)' : 'none') + ';">';
+    html += '<div class="card-header" data-toggle-loan="' + li + '" style="display:grid;grid-template-columns:auto auto 1fr auto auto auto;gap:10px;align-items:center;padding:12px 14px;cursor:pointer;background:var(--bg-card);border-bottom:' + (isExpanded ? '0.5px solid var(--border)' : 'none') + ';">';
     html += '<span style="font-family:var(--font-mono);font-size:14px;color:var(--text-tertiary);transition:transform 0.2s;display:inline-block;transform:' + (isExpanded ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>';
-    html += '<div style="font-weight:500;' + (loanPaid ? 'text-decoration:line-through;' : '') + '">' + escapeHtml(loan.name || '(isimsiz kredi)') +
+    html += '<span class="reorder-ctrl">' +
+      '<button class="reorder-btn" data-move-loan-up="' + li + '" aria-label="Yukarı taşı" title="Yukarı taşı"' + (li === 0 ? ' disabled' : '') + ' onclick="event.stopPropagation();">⌃</button>' +
+      '<button class="reorder-btn" data-move-loan-down="' + li + '" aria-label="Aşağı taşı" title="Aşağı taşı"' + (li === debtsState.loans.length - 1 ? ' disabled' : '') + ' onclick="event.stopPropagation();">⌄</button>' +
+      '</span>';
+    html += '<div class="card-name-cell" style="font-weight:500;' + (loanPaid ? 'text-decoration:line-through;' : '') + '">' + escapeHtml(loan.name || '(isimsiz kredi)') +
       '<span style="font-family:var(--font-mono);font-size:11px;color:' + (isActive ? 'var(--success-text)' : 'var(--text-tertiary)') + ';margin-left:10px;font-weight:400;">' +
       (isActive ? remaining + ' taksit kaldı' : 'Aktif değil') +
       '</span></div>';
@@ -4445,13 +4552,34 @@ function renderLoans() {
   // Header click → toggle
   c.querySelectorAll('[data-toggle-loan]').forEach(h => {
     h.onclick = (e) => {
-      if (e.target.closest('.row-x') || e.target.closest('.debt-tick')) return;
+      if (e.target.closest('.row-x') || e.target.closest('.debt-tick') || e.target.closest('.reorder-btn')) return;
       const li = +h.dataset.toggleLoan;
       const loanId = debtsState.loans[li].id;
       if (!debtsState.loansExpanded) debtsState.loansExpanded = {};
       debtsState.loansExpanded[loanId] = debtsState.loansExpanded[loanId] === false;
       saveDebts();
       renderLoans();
+    };
+  });
+  // v6.6: kredi sıralama (yukarı/aşağı)
+  c.querySelectorAll('[data-move-loan-up]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const i = +b.dataset.moveLoanUp;
+      if (i > 0) {
+        [debtsState.loans[i - 1], debtsState.loans[i]] = [debtsState.loans[i], debtsState.loans[i - 1]];
+        saveDebts(); renderLoans(); updateMetrics();
+      }
+    };
+  });
+  c.querySelectorAll('[data-move-loan-down]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const i = +b.dataset.moveLoanDown;
+      if (i < debtsState.loans.length - 1) {
+        [debtsState.loans[i + 1], debtsState.loans[i]] = [debtsState.loans[i], debtsState.loans[i + 1]];
+        saveDebts(); renderLoans(); updateMetrics();
+      }
     };
   });
 
@@ -4465,7 +4593,7 @@ function renderLoans() {
       updateMetricsLight();
       // İsim değişince header'da yansıt
       if (k === 'name') {
-        const headerName = c.querySelector('[data-toggle-loan="' + li + '"] > div:nth-child(2)');
+        const headerName = c.querySelector('[data-toggle-loan="' + li + '"] .card-name-cell');
         if (headerName) {
           const loan = debtsState.loans[li];
           const isActive = loan.startMonth && loan.endMonth && currentId >= loan.startMonth && currentId <= loan.endMonth;
