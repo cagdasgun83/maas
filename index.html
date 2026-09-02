@@ -3979,6 +3979,20 @@ function renderCards() {
         '<input type="text" data-sub-new="' + card.id + '" placeholder="Alt kart adı (örn. Asıl)" style="flex:1;font-size:13px;" onclick="event.stopPropagation();">' +
         '<button class="btn" data-add-sub="' + card.id + '" style="font-size:12px;" onclick="event.stopPropagation();">+ Ekle</button>' +
         '</div>';
+      // Toplu atama: etiketsiz kalemleri bir alt karta ata
+      if (cardHasSubs(card)) {
+        let untaggedCount = 0;
+        Object.values(card.monthlySpendsDetail || {}).forEach(arr => (arr || []).forEach(s => { if (!s.sub) untaggedCount++; }));
+        (card.installments || []).forEach(inst => { if (!inst.sub) untaggedCount++; });
+        if (untaggedCount > 0) {
+          html += '<div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+            '<span style="font-size:12px;color:var(--text-tertiary);">' + untaggedCount + ' etiketsiz kalem →</span>' +
+            card.subcards.map(sn =>
+              '<button class="btn" data-bulk-sub="' + card.id + '|' + escapeHtml(sn) + '" style="font-size:12px;padding:5px 10px;" onclick="event.stopPropagation();">Hepsini ' + escapeHtml(sn) + '\'a ata</button>'
+            ).join('') +
+            '</div>';
+        }
+      }
       html += '</div>';
 
       // Alt kart varsa: filtre çubuğu (Tümü / Asıl / Sanal)
@@ -4060,6 +4074,12 @@ function renderCards() {
           html += '<div><label class="field-label">Tutar (\u20ba)</label><input type="text" inputmode="decimal" placeholder="0" value="' + (sp.amount || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-amount" data-calc="1"></div>';
           html += '</div>';
           html += '<div><label class="field-label">Not</label><input type="text" placeholder="opsiyonel" value="' + escapeHtml(sp.note || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-note"></div>';
+          if (cardHasSubs(card)) {
+            html += '<div><label class="field-label">Alt kart</label><select data-sub-spend="' + card.id + ':' + sp.id + '">' +
+              '<option value="">(Tümü / etiketsiz)</option>' +
+              card.subcards.map(sn => '<option value="' + escapeHtml(sn) + '"' + ((sp.sub || '') === sn ? ' selected' : '') + '>' + escapeHtml(sn) + '</option>').join('') +
+              '</select></div>';
+          }
           html += '<div style="display:flex;gap:8px;justify-content:space-between;align-items:center;">';
           html += '<button class="row-x" data-rm-spend-c="' + ci + '" data-rm-spend-s="' + si + '" style="width:32px;height:32px;font-size:15px;">\u00d7</button>';
           html += '<button class="btn btn-primary" data-done-spend="' + card.id + ':' + sp.id + '" style="padding:7px 18px;">Tamam</button>';
@@ -4127,6 +4147,12 @@ function renderCards() {
           html += '</div>';
           html += '<div data-inst-info="' + ci + ':' + ii + '" style="font-family:var(--font-mono);font-size:12px;color:' + (isActive ? 'var(--success-text)' : 'var(--text-tertiary)') + ';">' +
             (monthly > 0 ? fmtTL(monthly) + '/ay · ' + remaining + ' kalan' : '—') + '</div>';
+          if (cardHasSubs(card)) {
+            html += '<div><label class="field-label">Alt kart</label><select data-sub-inst="' + card.id + ':' + inst.id + '">' +
+              '<option value="">(Tümü / etiketsiz)</option>' +
+              card.subcards.map(sn => '<option value="' + escapeHtml(sn) + '"' + ((inst.sub || '') === sn ? ' selected' : '') + '>' + escapeHtml(sn) + '</option>').join('') +
+              '</select></div>';
+          }
           html += '<div style="display:flex;gap:8px;justify-content:space-between;align-items:center;">';
           html += '<button class="row-x" data-rm-inst-c="' + ci + '" data-rm-inst-i="' + ii + '" style="width:32px;height:32px;font-size:15px;">×</button>';
           html += '<button class="btn btn-primary" data-done-inst="' + card.id + ':' + inst.id + '" style="padding:7px 18px;">Tamam</button>';
@@ -4362,6 +4388,43 @@ function renderCards() {
       const [cardId, sn] = b.dataset.subFilter.split('|');
       subActive[cardId] = sn || '';
       renderCards();
+    };
+  });
+  // v6.9: toplu atama (etiketsiz → alt kart)
+  c.querySelectorAll('[data-bulk-sub]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const [cardId, sn] = b.dataset.bulkSub.split('|');
+      const card = debtsState.cards.find(x => x.id === cardId);
+      if (!card) return;
+      if (!confirm('Alt kart etiketi olmayan tüm harcama ve taksitler "' + sn + '" alt kartına atansın mı? (Sonra tek tek düzeltebilirsiniz.)')) return;
+      Object.values(card.monthlySpendsDetail || {}).forEach(arr => (arr || []).forEach(s => { if (!s.sub) s.sub = sn; }));
+      (card.installments || []).forEach(inst => { if (!inst.sub) inst.sub = sn; });
+      saveDebts(); renderCards(); updateMetrics();
+      showToast('Etiketsiz kalemler ' + sn + '\'a atandı');
+    };
+  });
+  // v6.9: düzenleme formunda alt kart seçimi
+  c.querySelectorAll('[data-sub-spend]').forEach(sel => {
+    sel.onchange = (e) => {
+      const [cardId, spId] = sel.dataset.subSpend.split(':');
+      const card = debtsState.cards.find(x => x.id === cardId);
+      if (!card) return;
+      Object.values(card.monthlySpendsDetail || {}).forEach(arr => (arr || []).forEach(s => {
+        if (s.id === spId) { if (sel.value) s.sub = sel.value; else delete s.sub; }
+      }));
+      saveDebts(); renderCards(); updateMetrics();
+    };
+  });
+  c.querySelectorAll('[data-sub-inst]').forEach(sel => {
+    sel.onchange = (e) => {
+      const [cardId, instId] = sel.dataset.subInst.split(':');
+      const card = debtsState.cards.find(x => x.id === cardId);
+      if (!card) return;
+      (card.installments || []).forEach(inst => {
+        if (inst.id === instId) { if (sel.value) inst.sub = sel.value; else delete inst.sub; }
+      });
+      saveDebts(); renderCards(); updateMetrics();
     };
   });
   // v6.7: kart rengi seçimi
