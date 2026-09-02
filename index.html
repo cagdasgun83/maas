@@ -538,6 +538,13 @@ input[type="number"]::-webkit-inner-spin-button {
   border-left: 2px solid transparent;
   transition: border-color 0.15s, opacity 0.15s;
 }
+.row-cat {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  padding: 5px 8px;
+  color: var(--text-secondary);
+  margin-top: -2px;
+}
 .row.paid {
   opacity: 0.55;
   border-left-color: var(--success-text);
@@ -2115,6 +2122,7 @@ input[type="number"]::-webkit-inner-spin-button {
             <select id="report-month-select" style="font-size:12px;padding:3px 8px;height:auto;width:auto;display:inline-block;"></select>
           </span>
         </p>
+        <p class="section-subtitle" style="margin:-4px 0 12px;">Kart harcamaları, taksitler, sabit giderler ve nakit giderler — hepsi kategori bazında birleştirilir.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;" id="report-row-1">
           <div>
             <p style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-tertiary);margin:0 0 8px 0;">Kategori dağılımı</p>
@@ -2946,7 +2954,7 @@ const DEFAULT_SPEND_CATEGORIES = [
   'Market', 'Benzin', 'Çocuk Giyim', 'Ayten Giyim', 'Çağdaş Giyim',
   'Otomotiv/Bakım', 'Sigorta (Trafik/Kasko)', 'BES', 'Tatil',
   'Dışarı Yemek/İçmek', 'Kozmetik/Bakım', 'Hediye', 'Ayça/Ada Sofra',
-  'Ev/Mobilya', 'Fatura', 'Aidat/DoğalGaz', 'Bağış', 'Sağlık', 'Diğer'
+  'Ev/Mobilya', 'Fatura', 'Aidat/DoğalGaz', 'Eğitim', 'Bağış', 'Sağlık', 'Diğer'
 ];
 
 // v6.3: Kullanıcının eklediği kategoriler debtsState.customCategories içinde tutulur (eşitlenir).
@@ -3596,7 +3604,8 @@ function renderFixed() {
         '<input type="number" class="row-day" min="1" max="31" placeholder="—" value="' + (r.day || '') + '" data-i="' + i + '" data-k="day" title="Ödeme günü (ayın kaçında)">' +
         '<span class="row-day-month">' + monthShort + '</span>' +
       '</div>' +
-      '<button class="row-x" data-rm="' + i + '" aria-label="Satırı sil">×</button>';
+      '<button class="row-x" data-rm="' + i + '" aria-label="Satırı sil">×</button>' +
+      '<select class="row-cat" data-i="' + i + '" data-k="category" title="Kategori" aria-label="Kategori">' + catOptionsHtml(r.category || 'Fatura') + '</select>';
     c.appendChild(div);
   });
   c.querySelectorAll('input[type="text"], input[type="number"]').forEach(inp => {
@@ -3615,6 +3624,13 @@ function renderFixed() {
       save();
       renderFixed();
       updateKalanBakiye();
+    };
+  });
+  c.querySelectorAll('select[data-k="category"]').forEach(sel => {
+    sel.onchange = e => {
+      const i = +e.target.dataset.i;
+      state.fixedRows[i].category = e.target.value;
+      save();
     };
   });
   c.querySelectorAll('[data-rm]').forEach(b => {
@@ -3639,7 +3655,8 @@ function renderCash() {
       '<input type="checkbox" class="row-tick" ' + (r.paid ? 'checked' : '') + ' data-i="' + i + '" data-ck="paid" aria-label="Ödendi işaretle">' +
       '<input type="text" placeholder="örn. Kuru temizleme" value="' + escapeHtml(r.name || '') + '" data-i="' + i + '" data-ck="name">' +
       '<input type="number" min="0" step="50" placeholder="0" value="' + (r.amount || '') + '" data-i="' + i + '" data-ck="amount">' +
-      '<button class="row-x" data-rmcash="' + i + '" aria-label="Satırı sil">×</button>';
+      '<button class="row-x" data-rmcash="' + i + '" aria-label="Satırı sil">×</button>' +
+      '<select class="row-cat" data-i="' + i + '" data-ck="category" title="Kategori" aria-label="Kategori">' + catOptionsHtml(r.category || 'Diğer') + '</select>';
     c.appendChild(div);
   });
   c.querySelectorAll('input[type="text"], input[type="number"]').forEach(inp => {
@@ -3656,6 +3673,13 @@ function renderCash() {
       const i = +e.target.dataset.i;
       state.cashRows[i].paid = e.target.checked;
       save(); renderCash();
+    };
+  });
+  c.querySelectorAll('select[data-ck="category"]').forEach(sel => {
+    sel.onchange = e => {
+      const i = +e.target.dataset.i;
+      state.cashRows[i].category = e.target.value;
+      save();
     };
   });
   c.querySelectorAll('[data-rmcash]').forEach(b => {
@@ -4441,6 +4465,25 @@ function computeCategoryTotalsForMonth(ym) {
       }
     });
   });
+
+  // v6.4: Sabit giderler + nakit giderler (o aya ait kayıttan)
+  const rec = (currentId === ym && typeof state !== 'undefined')
+    ? state
+    : (monthsCache || []).find(m => m.id === ym);
+  if (rec) {
+    (rec.fixedRows || []).forEach(r => {
+      if (!num(r.amount)) return;
+      const cat = r.category || 'Fatura';
+      if (totals[cat] === undefined) totals[cat] = 0;
+      totals[cat] += num(r.amount);
+    });
+    (rec.cashRows || []).forEach(r => {
+      if (!num(r.amount)) return;
+      const cat = r.category || 'Diğer';
+      if (totals[cat] === undefined) totals[cat] = 0;
+      totals[cat] += num(r.amount);
+    });
+  }
 
   return totals;
 }
@@ -6012,6 +6055,7 @@ function attachInputs() {
           name: r.name || '',
           amount: num(r.amount),
           day: num(r.day) || null,
+          category: r.category || 'Fatura',
           paid: false
         }));
       }
@@ -6020,6 +6064,7 @@ function attachInputs() {
         fresh.cashRows = lastMonth.cashRows.map(r => ({
           name: r.name || '',
           amount: num(r.amount),
+          category: r.category || 'Diğer',
           paid: false
         }));
       }
