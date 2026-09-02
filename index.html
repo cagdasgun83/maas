@@ -4092,20 +4092,33 @@ function renderCards() {
       html += '</div>';
 
       // Taksitler
+      // v6.9.1: alt kart seçiliyse yalnızca o alt kartın taksitlerini say/topla
+      const instFilterFn = inst => {
+        if (inst.startMonth && num(inst.totalCount) > 0 && monthDiff(inst.startMonth, currentId) >= num(inst.totalCount)) return false; // bitmiş
+        if (cardHasSubs(card) && curSub !== '' && (inst.sub || '') !== curSub) return false; // alt kart filtresi
+        return true;
+      };
+      const instVisibleList = (card.installments || []).filter(instFilterFn);
+      const instVisibleCount = instVisibleList.length;
+      const instVisibleTotal = instVisibleList.reduce((sum, inst) => {
+        const idx = monthDiff(inst.startMonth, currentId);
+        if (idx >= 0 && idx < num(inst.totalCount) && num(inst.totalCount) > 0) {
+          return sum + num(inst.amount) / num(inst.totalCount);
+        }
+        return sum;
+      }, 0);
       html += '<div style="border-top:0.5px solid var(--border);padding-top:10px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-        '<span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);">Taksitli alışverişler (' + (card.installments || []).filter(inst => !(inst.startMonth && num(inst.totalCount) > 0 && monthDiff(inst.startMonth, currentId) >= num(inst.totalCount))).length + ') · Bu ay: ' +
-          '<span style="color:var(--accent);font-weight:500;">' + fmtTL(cardInstThisMonth) + '</span>' +
+        '<span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);">Taksitli alışverişler (' + instVisibleCount + ')' + (cardHasSubs(card) && curSub ? ' · ' + escapeHtml(curSub) : '') + ' · Bu ay: ' +
+          '<span style="color:var(--accent);font-weight:500;">' + fmtTL(instVisibleTotal) + '</span>' +
         '</span>';
       html += '<button class="btn-add" data-add-inst="' + ci + '" style="font-size:11px;padding:4px 10px;">+ Taksit ekle</button></div>';
 
-      const visibleInstCount = (card.installments || []).filter(inst =>
-        !(inst.startMonth && num(inst.totalCount) > 0 && monthDiff(inst.startMonth, currentId) >= num(inst.totalCount))
-      ).length;
+      const visibleInstCount = instVisibleCount;
       if (!card.installments || card.installments.length === 0) {
         html += '<p style="font-size:12px;color:var(--text-tertiary);font-style:italic;">Taksitli alışveriş yok.</p>';
       } else if (visibleInstCount === 0) {
-        html += '<p style="font-size:12px;color:var(--text-tertiary);font-style:italic;">Bu ay için aktif taksit yok (biten taksitler geçmiş aylarda görünür).</p>';
+        html += '<p style="font-size:12px;color:var(--text-tertiary);font-style:italic;">' + (cardHasSubs(card) && curSub ? escapeHtml(curSub) + ' için bu ay aktif taksit yok.' : 'Bu ay için aktif taksit yok (biten taksitler geçmiş aylarda görünür).') + '</p>';
       } else {
         html += '<div style="display:grid;gap:6px;">';
         card.installments.forEach((inst, ii) => {
