@@ -5418,6 +5418,20 @@ async function exportToExcel() {
       console.error('XLSX library not loaded');
       return;
     }
+    // v6.5.1: Excel hücre başına 32.767 karakter sınırını aşan metinleri güvenle kırp
+    const XLSX_CELL_MAX = 32767;
+    const _origAoa = XLSX.utils.aoa_to_sheet;
+    const aoaSafe = (rows, opts) => {
+      const clamped = (rows || []).map(row =>
+        Array.isArray(row) ? row.map(cell => {
+          if (typeof cell === 'string' && cell.length > XLSX_CELL_MAX) {
+            return cell.slice(0, XLSX_CELL_MAX - 1) + '…';
+          }
+          return cell;
+        }) : row
+      );
+      return _origAoa.call(XLSX.utils, clamped, opts);
+    };
     const all = await dbAll();
     // Sadece ay kayıtları (portföy ve borçlar gibi diğer keyleri çıkar)
     const monthRecords = all.filter(r => r.id && /^\d{4}-\d{2}$/.test(r.id));
@@ -5472,7 +5486,7 @@ async function exportToExcel() {
         Math.round(alloc), Math.round(inc - alloc)
       ]);
     });
-    const ws1 = XLSX.utils.aoa_to_sheet(summary);
+    const ws1 = aoaSafe(summary);
     ws1['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, ...Array(25).fill({ wch: 13 })];
     XLSX.utils.book_append_sheet(wb, ws1, 'Aylık Özet');
 
@@ -5486,7 +5500,7 @@ async function exportToExcel() {
         ]);
       });
     });
-    const ws2 = XLSX.utils.aoa_to_sheet(fixedSheet);
+    const ws2 = aoaSafe(fixedSheet);
     ws2['!cols'] = [{ wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws2, 'Sabit Giderler');
 
@@ -5502,7 +5516,7 @@ async function exportToExcel() {
         m.label || formatMonth(m.id), 'Diğer değişken (toplam)', Math.round(num(m.variable)), ''
       ]);
     });
-    const ws2b = XLSX.utils.aoa_to_sheet(cashSheet);
+    const ws2b = aoaSafe(cashSheet);
     ws2b['!cols'] = [{ wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws2b, 'Nakit Giderler');
 
@@ -5558,7 +5572,7 @@ async function exportToExcel() {
         isActive ? (remaining + ' taksit kaldı') : ''
       ]);
     });
-    const ws3 = XLSX.utils.aoa_to_sheet(debtSheet);
+    const ws3 = aoaSafe(debtSheet);
     ws3['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 13 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 13 }, { wch: 20 }];
     XLSX.utils.book_append_sheet(wb, ws3, 'Borçlar');
 
@@ -5582,7 +5596,7 @@ async function exportToExcel() {
         ]);
       });
     });
-    const wsT = XLSX.utils.aoa_to_sheet(tickSheet);
+    const wsT = aoaSafe(tickSheet);
     wsT['!cols'] = [{ wch: 14 }, { wch: 10 }, { wch: 24 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, wsT, 'Ödeme Durumları');
 
@@ -5601,7 +5615,7 @@ async function exportToExcel() {
           Math.round(num(it.costTL))
         ]);
       });
-      const ws = XLSX.utils.aoa_to_sheet(sheet);
+      const ws = aoaSafe(sheet);
       ws['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 14 }];
       XLSX.utils.book_append_sheet(wb, ws, label);
     };
@@ -5613,7 +5627,7 @@ async function exportToExcel() {
     (pState.rates || []).forEach(r => {
       ratesSheet.push([r.name || '', num(r.price) || '', r.unit || '', r.note || '']);
     });
-    const wsR = XLSX.utils.aoa_to_sheet(ratesSheet);
+    const wsR = aoaSafe(ratesSheet);
     wsR['!cols'] = [{ wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 22 }];
     XLSX.utils.book_append_sheet(wb, wsR, 'Kurlar');
 
@@ -5630,7 +5644,7 @@ async function exportToExcel() {
           num(t.qty), num(t.price), num(t.total), t.note || ''
         ]);
       });
-    const wsTx = XLSX.utils.aoa_to_sheet(txSheet);
+    const wsTx = aoaSafe(txSheet);
     wsTx['!cols'] = [{ wch: 12 }, { wch: 22 }, { wch: 6 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 22 }];
     XLSX.utils.book_append_sheet(wb, wsTx, 'İşlem Defteri');
 
@@ -5651,7 +5665,7 @@ async function exportToExcel() {
       });
     });
     if (contribSheet.length > 1) {
-      const wsC = XLSX.utils.aoa_to_sheet(contribSheet);
+      const wsC = aoaSafe(contribSheet);
       wsC['!cols'] = [{ wch: 22 }, { wch: 6 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 22 }, { wch: 10 }];
       XLSX.utils.book_append_sheet(wb, wsC, 'Katkı Geçmişi');
     }
@@ -5664,7 +5678,7 @@ async function exportToExcel() {
         growthSheet.push([formatMonth(g.id), num(g.uv), num(g.ev), num(g.contrib), num(g.usdRate)]);
       });
     if (growthSheet.length > 1) {
-      const wsG = XLSX.utils.aoa_to_sheet(growthSheet);
+      const wsG = aoaSafe(growthSheet);
       wsG['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 12 }];
       XLSX.utils.book_append_sheet(wb, wsG, 'Aylık Büyüme');
     }
@@ -5691,7 +5705,7 @@ async function exportToExcel() {
       const saving = income - fxdC - card - loan - invC - efmC - bufC;
       projSheet.push([formatMonth(ym), Math.round(income), Math.round(fxdC), Math.round(card), Math.round(loan), Math.round(invC), Math.round(efmC), Math.round(bufC), Math.round(saving)]);
     });
-    const ws4 = XLSX.utils.aoa_to_sheet(projSheet);
+    const ws4 = aoaSafe(projSheet);
     ws4['!cols'] = [{ wch: 14 }, ...Array(8).fill({ wch: 13 })];
     XLSX.utils.book_append_sheet(wb, ws4, '12 Ay Projeksiyon');
 
@@ -5765,7 +5779,7 @@ async function exportToExcel() {
       });
       rows.push(totalRow);
 
-      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const ws = aoaSafe(rows);
       const cols = [{ wch: 22 }];
       ymList.forEach(() => cols.push({ wch: 13 }, { wch: 9 }));
       ws['!cols'] = cols;
@@ -5779,7 +5793,7 @@ async function exportToExcel() {
     monthRecords.forEach(m => raw.push(['MONTH', JSON.stringify(m)]));
     raw.push(['DEBTS', JSON.stringify(debtsState)]);
     raw.push(['PSTATE', JSON.stringify(pState)]);
-    const wsRaw = XLSX.utils.aoa_to_sheet(raw);
+    const wsRaw = aoaSafe(raw);
     wsRaw['!cols'] = [{ wch: 12 }, { wch: 200 }];
     XLSX.utils.book_append_sheet(wb, wsRaw, '_Veri');
 
