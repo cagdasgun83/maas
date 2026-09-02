@@ -3236,6 +3236,34 @@ function getCardSpendDetails(card, ym) {
   return card.monthlySpendsDetail[ym];
 }
 
+// v6.8: Alt kart (ör. Garanti → Asıl / Sanal) yardımcıları
+// Kart bazında hangi alt kartın seçili olduğu (görüntü + yeni kayıt etiketi). '' = Tümü
+const subActive = {};
+function cardHasSubs(card) {
+  return Array.isArray(card.subcards) && card.subcards.length > 0;
+}
+function activeSub(card) {
+  const v = subActive[card.id];
+  return (v === undefined) ? '' : v;
+}
+// Bir alt kart adının o ay harcama toplamı
+function subSpendTotal(card, ym, subName) {
+  return getCardSpendDetails(card, ym)
+    .filter(s => (s.sub || '') === subName)
+    .reduce((a, s) => a + num(s.amount), 0);
+}
+// Bir alt kartın o ay aktif taksit dilimi toplamı
+function subInstTotal(card, ym, subName) {
+  let t = 0;
+  (card.installments || []).forEach(inst => {
+    if ((inst.sub || '') !== subName) return;
+    if (!inst.startMonth || !num(inst.totalCount)) return;
+    const idx = monthDiff(inst.startMonth, ym);
+    if (idx >= 0 && idx < num(inst.totalCount)) t += num(inst.amount) / num(inst.totalCount);
+  });
+  return t;
+}
+
 // Bir ay için tüm kartların aylık harcaması
 function totalCardSpendForMonth(ym) {
   return debtsState.cards.reduce((a, c) => a + getCardSpend(c, ym), 0);
@@ -3934,6 +3962,40 @@ function renderCards() {
       html += '</div>';
       html += '</div>';
 
+      // v6.8: Alt kartlar (ör. Garanti → Asıl / Sanal)
+      html += '<div style="margin-bottom:12px;">';
+      html += '<label class="field-label">Alt kartlar</label>';
+      if (cardHasSubs(card)) {
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">';
+        card.subcards.forEach(sn => {
+          html += '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--bg-secondary);border-radius:var(--radius-md);padding:4px 8px;font-size:12px;">' +
+            escapeHtml(sn) +
+            '<button class="row-x" data-rm-sub="' + card.id + '|' + escapeHtml(sn) + '" title="Alt kartı kaldır" style="width:18px;height:18px;font-size:12px;" onclick="event.stopPropagation();">×</button>' +
+            '</span>';
+        });
+        html += '</div>';
+      }
+      html += '<div style="display:flex;gap:6px;">' +
+        '<input type="text" data-sub-new="' + card.id + '" placeholder="Alt kart adı (örn. Asıl)" style="flex:1;font-size:13px;" onclick="event.stopPropagation();">' +
+        '<button class="btn" data-add-sub="' + card.id + '" style="font-size:12px;" onclick="event.stopPropagation();">+ Ekle</button>' +
+        '</div>';
+      html += '</div>';
+
+      // Alt kart varsa: filtre çubuğu (Tümü / Asıl / Sanal)
+      let curSub = '';
+      if (cardHasSubs(card)) {
+        curSub = activeSub(card);
+        html += '<div class="bucket-tab" style="margin-bottom:12px;overflow-x:auto;">';
+        const allTotal = getCardSpend(card, currentId);
+        html += '<button' + (curSub === '' ? ' class="active"' : '') + ' data-sub-filter="' + card.id + '|">Tümü</button>';
+        card.subcards.forEach(sn => {
+          const st = subSpendTotal(card, currentId, sn) + subInstTotal(card, currentId, sn);
+          html += '<button' + (curSub === sn ? ' class="active"' : '') + ' data-sub-filter="' + card.id + '|' + escapeHtml(sn) + '">' + escapeHtml(sn) + ' · ' + fmtTL(st) + '</button>';
+        });
+        // Etiketsiz kalanlar da olabilir
+        html += '</div>';
+      }
+
       // v6.0: Bu ay ödeme (asgari / kısmi ödeme takibi)
       {
         const paidAmt = getCardPaidAmount(card.id, currentId);
@@ -3963,23 +4025,27 @@ function renderCards() {
 
       // Bu ay harcama — kategori detay listesi
       const spends = getCardSpendDetails(card, currentId);
-      const spendTotal = spends.reduce((a, s) => a + num(s.amount), 0);
+      const spendsVisible = cardHasSubs(card) && curSub !== ''
+        ? spends.filter(s => (s.sub || '') === curSub)
+        : spends;
+      const spendTotal = spendsVisible.reduce((a, s) => a + num(s.amount), 0);
       html += '<div style="border-top:0.5px solid var(--border);padding-top:10px;margin-bottom:14px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
-      html += '<span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);">Bu ay harcama (' + monthLabel + ') · ' + spends.length + ' kalem</span>';
+      html += '<span style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);">Bu ay harcama (' + monthLabel + ')' + (cardHasSubs(card) && curSub ? ' · ' + escapeHtml(curSub) : '') + ' · ' + spendsVisible.length + ' kalem</span>';
       html += '<span style="font-family:var(--font-mono);font-size:13px;font-weight:500;color:var(--accent);">' + fmtTL(spendTotal) + '</span>';
       html += '</div>';
 
-      if (spends.length === 0) {
+      if (spendsVisible.length === 0) {
         html += '<p style="font-size:12px;color:var(--text-tertiary);font-style:italic;margin-bottom:8px;">Henüz harcama yok.</p>';
       } else {
         html += '<div style="display:grid;gap:6px;margin-bottom:8px;">';
         spends.forEach((sp, si) => {
+          if (cardHasSubs(card) && curSub !== '' && (sp.sub || '') !== curSub) return;
           const editing = spendEditing.has(card.id + ':' + sp.id);
           if (!editing) {
             html += '<div class="spend-compact" data-edit-spend="' + card.id + ':' + sp.id + '" style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);cursor:pointer;">';
             html += '<div style="flex:1;min-width:0;">';
-            html += '<div style="font-size:13px;font-weight:500;">' + escapeHtml(sp.category || 'Diğer') + '</div>';
+            html += '<div style="font-size:13px;font-weight:500;">' + escapeHtml(sp.category || 'Diğer') + (cardHasSubs(card) && curSub === '' && sp.sub ? ' <span style="font-size:10px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.sub) + '</span>' : '') + '</div>';
             if (sp.note) html += '<div style="font-size:11px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(sp.note) + '</div>';
             html += '</div>';
             html += '<div style="font-size:13px;font-weight:500;font-family:var(--font-mono);white-space:nowrap;">' + fmtTL(num(sp.amount)) + '</div>';
@@ -4028,6 +4094,7 @@ function renderCards() {
           // Süresi bu aydan önce dolan taksitler bu ayda listelenmez (geçmiş aylarda görünmeye devam eder)
           const isFinished = inst.startMonth && num(inst.totalCount) > 0 && startIdx >= num(inst.totalCount);
           if (isFinished) return;
+          if (cardHasSubs(card) && curSub !== '' && (inst.sub || '') !== curSub) return; // v6.8 alt kart filtresi
           const remaining = Math.max(0, num(inst.totalCount) - Math.max(0, startIdx));
           const monthly = num(inst.totalCount) > 0 ? num(inst.amount) / num(inst.totalCount) : 0;
           const paid = Math.max(0, Math.min(num(inst.totalCount), startIdx + 1));
@@ -4252,6 +4319,51 @@ function renderCards() {
       renderCards(); updateMetrics();
     };
   });
+  // v6.8: alt kart yönetimi
+  c.querySelectorAll('[data-add-sub]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const cardId = b.dataset.addSub;
+      const inp = c.querySelector('[data-sub-new="' + cardId + '"]');
+      const name = inp ? inp.value.trim() : '';
+      if (!name) { showToast('Alt kart adı girin'); return; }
+      const card = debtsState.cards.find(x => x.id === cardId);
+      if (!card) return;
+      if (!Array.isArray(card.subcards)) card.subcards = [];
+      if (card.subcards.some(s => s.toLowerCase() === name.toLowerCase())) { showToast('Bu alt kart zaten var'); return; }
+      card.subcards.push(name);
+      saveDebts(); renderCards();
+    };
+  });
+  c.querySelectorAll('[data-rm-sub]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const [cardId, sn] = b.dataset.rmSub.split('|');
+      const card = debtsState.cards.find(x => x.id === cardId);
+      if (!card) return;
+      let inUse = false;
+      Object.values(card.monthlySpendsDetail || {}).forEach(arr => (arr || []).forEach(s => { if (s.sub === sn) inUse = true; }));
+      (card.installments || []).forEach(inst => { if (inst.sub === sn) inUse = true; });
+      const msg = inUse
+        ? '"' + sn + '" alt kartı kaldırılsın mı? İçindeki harcama/taksitler karta kalır ama alt kart etiketi silinir.'
+        : '"' + sn + '" alt kartı kaldırılsın mı?';
+      if (!confirm(msg)) return;
+      // Etiketleri temizle
+      Object.values(card.monthlySpendsDetail || {}).forEach(arr => (arr || []).forEach(s => { if (s.sub === sn) delete s.sub; }));
+      (card.installments || []).forEach(inst => { if (inst.sub === sn) delete inst.sub; });
+      card.subcards = card.subcards.filter(s => s !== sn);
+      if (subActive[cardId] === sn) subActive[cardId] = '';
+      saveDebts(); renderCards();
+    };
+  });
+  c.querySelectorAll('[data-sub-filter]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const [cardId, sn] = b.dataset.subFilter.split('|');
+      subActive[cardId] = sn || '';
+      renderCards();
+    };
+  });
   // v6.7: kart rengi seçimi
   c.querySelectorAll('[data-color-card]').forEach(b => {
     b.onclick = (e) => {
@@ -4282,6 +4394,8 @@ function renderCards() {
       const ci = +b.dataset.addInst;
       if (!debtsState.cards[ci].installments) debtsState.cards[ci].installments = [];
       const newInst = { id: genId('INST'), label: '', category: 'Diğer', amount: 0, totalCount: 1, startMonth: currentId };
+      const _subI = activeSub(debtsState.cards[ci]);
+      if (_subI) newInst.sub = _subI;
       debtsState.cards[ci].installments.push(newInst);
       instEditing.add(debtsState.cards[ci].id + ':' + newInst.id);
       saveDebts(); renderCards(); updateMetrics();
@@ -4306,6 +4420,8 @@ function renderCards() {
       const ci = +b.dataset.addSpend;
       const details = getCardSpendDetails(debtsState.cards[ci], currentId);
       const newSp = { id: genId('SP'), category: 'Diğer', amount: 0, note: '' };
+      const _subS = activeSub(debtsState.cards[ci]);
+      if (_subS) newSp.sub = _subS;
       details.push(newSp);
       spendEditing.add(debtsState.cards[ci].id + ':' + newSp.id);
       saveDebts(); renderCards(); updateMetrics();
