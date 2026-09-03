@@ -1905,6 +1905,15 @@ input[type="number"]::-webkit-inner-spin-button {
       </button>
     </div>
 
+    <div class="card" id="home-budget-card" style="display:none;">
+      <p class="card-title">Bu ay bütçe
+        <span style="float:right;font-family:var(--font-sans);font-size:11px;color:var(--text-tertiary);text-transform:none;letter-spacing:0;">
+          <button class="btn-ghost btn" id="home-budget-manage" style="font-size:11px;padding:2px 8px;height:auto;">Düzenle</button>
+        </span>
+      </p>
+      <div id="home-budget-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+    </div>
+
     <div class="card" id="home-status-card">
       <p class="card-title">Durum</p>
       <div id="home-status" style="display:flex;flex-direction:column;gap:8px;font-size:13px;"></div>
@@ -4243,6 +4252,7 @@ function renderCards() {
             saveDebts();
             updateCardTotals();
             updateMetricsLight();
+            checkBudgetWarning(details[si].category);
           }
         }
         return;
@@ -8460,6 +8470,65 @@ function switchMode(mode) {
 }
 
 // ===== v5.6: Ana Sayfa =====
+// v7.4: Kategori bütçe aşımı / yaklaşma uyarısı (harcama girişinde)
+function checkBudgetWarning(category) {
+  if (!category) return;
+  const budgets = (state && state.categoryBudgets) || {};
+  const bud = num(budgets[category]);
+  if (bud <= 0) return;
+  const totals = computeCategoryTotalsForMonth(currentId);
+  const spent = num(totals[category] || 0);
+  if (spent > bud) {
+    showToast('⚠ ' + category + ' bütçesi aşıldı: ' + fmtTL(spent) + ' / ' + fmtTL(bud) + ' (' + fmtTL(spent - bud) + ' fazla)');
+  } else if (spent >= bud * 0.9) {
+    showToast(category + ' bütçesine yaklaştınız: ' + fmtTL(bud - spent) + ' kaldı');
+  }
+}
+
+// v7.4: Ana sayfada zarf bütçesi özeti
+function renderHomeBudget() {
+  const card = document.getElementById('home-budget-card');
+  const list = document.getElementById('home-budget-list');
+  if (!card || !list) return;
+  const budgets = (state && state.categoryBudgets) || {};
+  const cats = Object.keys(budgets).filter(c => num(budgets[c]) > 0);
+  if (cats.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const totals = computeCategoryTotalsForMonth(currentId);
+  // Bütçeye göre sırala: en çok dolmuş (aşan/riskli) üstte
+  const rows = cats.map(cat => {
+    const bud = num(budgets[cat]);
+    const spent = num(totals[cat] || 0);
+    return { cat, bud, spent, pct: bud > 0 ? spent / bud : 0 };
+  }).sort((a, b) => b.pct - a.pct);
+
+  let totalBud = 0, totalSpent = 0;
+  let html = '';
+  rows.forEach(r => {
+    totalBud += r.bud; totalSpent += r.spent;
+    const pctUsed = r.bud > 0 ? Math.min(100, Math.round(r.spent / r.bud * 100)) : 0;
+    const over = r.spent > r.bud;
+    const remain = r.bud - r.spent;
+    const barColor = over ? 'var(--danger-text)' : (pctUsed >= 80 ? 'var(--warning-text, #b8860b)' : 'var(--success-text)');
+    html += '<div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px;">';
+    html += '<span style="font-size:13px;font-weight:500;">' + escapeHtml(r.cat) + '</span>';
+    html += '<span style="font-family:var(--font-mono);font-size:11px;color:' + (over ? 'var(--danger-text)' : 'var(--text-tertiary)') + ';">' + (remain >= 0 ? fmtTL(remain) + ' kaldı' : fmtTL(-remain) + ' aşıldı') + '</span>';
+    html += '</div>';
+    html += '<div style="height:7px;border-radius:4px;background:var(--bg-secondary);overflow:hidden;"><div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';"></div></div>';
+    html += '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);margin-top:3px;">' + fmtTL(r.spent) + ' / ' + fmtTL(r.bud) + '</div>';
+    html += '</div>';
+  });
+  // Genel toplam
+  const totalRemain = totalBud - totalSpent;
+  html += '<div style="border-top:0.5px solid var(--border);padding-top:8px;display:flex;justify-content:space-between;align-items:baseline;">' +
+    '<span style="font-size:13px;font-weight:600;">Toplam</span>' +
+    '<span style="font-family:var(--font-mono);font-size:12px;font-weight:600;color:' + (totalRemain < 0 ? 'var(--danger-text)' : 'var(--accent)') + ';">' + fmtTL(totalSpent) + ' / ' + fmtTL(totalBud) + '</span>' +
+    '</div>';
+  list.innerHTML = html;
+}
+
 function renderHome() {
   const g = document.getElementById('home-greeting');
   const dt = document.getElementById('home-date');
@@ -8469,6 +8538,9 @@ function renderHome() {
   const h = now.getHours();
   g.textContent = h < 6 ? 'İyi geceler' : h < 12 ? 'Günaydın' : h < 18 ? 'İyi günler' : 'İyi akşamlar';
   dt.textContent = now.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  // v7.4: Ana sayfa zarf bütçesi özeti
+  renderHomeBudget();
 
   const rows = [];
   const dot = (color, text) =>
@@ -8742,6 +8814,18 @@ function attachPortfolioInputs() {
     };
   });
   renderHome();
+  const hbm = document.getElementById('home-budget-manage');
+  if (hbm) hbm.onclick = () => {
+    switchMode('budget');
+    currentStep = 2;
+    renderAll();
+    // Kategori raporu alt sekmesine geç
+    setTimeout(() => {
+      const reportTab = document.querySelector('[data-debts-view="report"]');
+      if (reportTab) reportTab.click();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 50);
+  };
 
   // ===== v5.7: hızlı ekle kabloları =====
   document.getElementById('fab').onclick = qaOpen;
@@ -9465,6 +9549,7 @@ function qaSaveSpend() {
   localStorage.setItem('mg-qa-cat', category);
   saveDebts(); renderCards(); updateMetrics();
   showToast(category + ' · ' + fmtTL(amount) + ' → ' + (card.name || 'Kart') + ' (' + monthLabelOf(currentId) + ')');
+  setTimeout(() => checkBudgetWarning(category), 1800);
   document.getElementById('qa-amount').value = '';
   document.getElementById('qa-note').value = '';
   document.getElementById('qa-amount').focus();
