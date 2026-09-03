@@ -4065,21 +4065,9 @@ function renderCards() {
           if (cardHasSubs(card) && curSub !== '' && (sp.sub || '') !== curSub) return;
           const editing = spendEditing.has(card.id + ':' + sp.id);
           if (!editing) {
-            const hasBudget = num(sp.budget) > 0;
-            const spent = num(sp.amount);
-            const budget = num(sp.budget);
-            const remain = budget - spent;
             html += '<div class="spend-compact" data-edit-spend="' + card.id + ':' + sp.id + '" style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);cursor:pointer;">';
             html += '<div style="flex:1;min-width:0;">';
             html += '<div style="font-size:13px;font-weight:500;">' + escapeHtml(sp.category || 'Diğer') + (sp.note ? ' <span style="font-size:11px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.note) + '</span>' : '') + (cardHasSubs(card) && curSub === '' && sp.sub ? ' <span style="font-size:10px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.sub) + '</span>' : '') + '</div>';
-            if (hasBudget) {
-              const pctUsed = budget > 0 ? Math.min(100, Math.round(spent / budget * 100)) : 0;
-              const barColor = spent > budget ? 'var(--danger-text)' : (pctUsed >= 80 ? 'var(--warning-text, #b8860b)' : 'var(--success-text)');
-              html += '<div style="margin-top:4px;">';
-              html += '<div style="height:5px;border-radius:3px;background:var(--bg-secondary);overflow:hidden;"><div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';"></div></div>';
-              html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px;font-family:var(--font-mono);">' + fmtTL(spent) + ' / ' + fmtTL(budget) + ' · ' + (remain >= 0 ? fmtTL(remain) + ' kaldı' : fmtTL(-remain) + ' aşıldı') + '</div>';
-              html += '</div>';
-            }
             html += '</div>';
             html += '<div style="font-size:13px;font-weight:500;font-family:var(--font-mono);white-space:nowrap;">' + fmtTL(num(sp.amount)) + '</div>';
             html += '<span style="color:var(--text-tertiary);font-size:15px;">\u203a</span>';
@@ -4088,13 +4076,12 @@ function renderCards() {
           }
           const catOptions = catOptionsHtml(sp.category);
           html += '<div class="spend-edit" style="padding:12px;background:var(--bg-card);border:1px solid var(--accent);border-radius:var(--radius-md);display:grid;gap:8px;">';
-          html += '<div><label class="field-label">Kategori</label><select data-ci="' + ci + '" data-si="' + si + '" data-k="spend-cat">' + catOptions + '</select></div>';
           html += '<div class="qa-row2">';
-          html += '<div><label class="field-label">Harcanan (₺)</label><input type="text" inputmode="decimal" placeholder="0" value="' + (sp.amount || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-amount" data-calc="1"></div>';
-          html += '<div><label class="field-label">Aylık bütçe (₺, ops.)</label><input type="text" inputmode="decimal" placeholder="—" value="' + (sp.budget || '') + '" data-budget-spend="' + card.id + ':' + sp.id + '"></div>';
+          html += '<div><label class="field-label">Kategori</label><select data-ci="' + ci + '" data-si="' + si + '" data-k="spend-cat">' + catOptions + '</select></div>';
+          html += '<div><label class="field-label">Tutar (₺)</label><input type="text" inputmode="decimal" placeholder="0" value="' + (sp.amount || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-amount" data-calc="1"></div>';
           html += '</div>';
           html += '<div><label class="field-label">Not</label><input type="text" placeholder="opsiyonel" value="' + escapeHtml(sp.note || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-note"></div>';
-          html += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;"><input type="checkbox" style="width:auto;" data-recur-spend="' + card.id + ':' + sp.id + '"' + (sp.recurring ? ' checked' : '') + '> Her ay tekrar et (yeni ayda bütçesiyle kopyalanır, harcama sıfırlanır)</label>';
+          html += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;"><input type="checkbox" style="width:auto;" data-recur-spend="' + card.id + ':' + sp.id + '"' + (sp.recurring ? ' checked' : '') + '> Her ay tekrar et (yeni ayda kopyalanır, tutar sıfırlanır)</label>';
           if (cardHasSubs(card)) {
             html += '<div><label class="field-label">Alt kart</label><select data-sub-spend="' + card.id + ':' + sp.id + '">' +
               '<option value="">(Tümü / etiketsiz)</option>' +
@@ -4548,13 +4535,6 @@ function renderCards() {
     }
     return null;
   };
-  c.querySelectorAll('[data-budget-spend]').forEach(inp => {
-    inp.onchange = (e) => {
-      const [cardId, spId] = inp.dataset.budgetSpend.split(':');
-      const sp = findSpendById(cardId, spId);
-      if (sp) { const v = num(inp.value); if (v > 0) sp.budget = v; else delete sp.budget; saveDebts(); renderCards(); }
-    };
-  });
   c.querySelectorAll('[data-recur-spend]').forEach(chk => {
     chk.onchange = (e) => {
       const [cardId, spId] = chk.dataset.recurSpend.split(':');
@@ -5028,24 +5008,84 @@ function renderCategoryReport() {
     }
   }
 
-  // Tablo
+  // Tablo — v7.3 zarf bütçesi (kategori bazlı)
   const tableEl = $('report-cat-table');
   if (tableEl) {
-    if (entries.length === 0) {
-      tableEl.innerHTML = '<p style="color:var(--text-tertiary);font-size:12px;font-style:italic;text-align:center;padding:20px 0;">Bu ay için kategorize harcama yok</p>';
+    // Bütçeler bulunulan ayın state'inde tutulur (geçmiş ay seçiliyse o ayın kaydından)
+    const budgetRec = (selectedYm === currentId) ? state : (monthsCache || []).find(m => m.id === selectedYm);
+    const budgets = (budgetRec && budgetRec.categoryBudgets) || {};
+    // Bütçesi olan ama harcaması olmayan kategorileri de göster
+    const catsToShow = new Set(entries.map(([c]) => c));
+    Object.keys(budgets).forEach(c => { if (num(budgets[c]) > 0) catsToShow.add(c); });
+    const rows = [...catsToShow].map(cat => [cat, totals[cat] || 0]).sort((a, b) => (budgets[b[0]] || b[1]) - (budgets[a[0]] || a[1]));
+    const editable = (selectedYm === currentId); // sadece bulunulan ayın bütçesi düzenlenebilir
+    const totalBudget = Object.keys(budgets).reduce((a, c) => a + num(budgets[c]), 0);
+
+    if (rows.length === 0) {
+      tableEl.innerHTML = '<p style="color:var(--text-tertiary);font-size:12px;font-style:italic;text-align:center;padding:20px 0;">Bu ay için harcama veya bütçe yok. Aşağıdan kategori bütçesi ekleyebilirsiniz.</p>';
     } else {
-      const palette = generatePalette(entries.length);
-      tableEl.innerHTML = '<table style="width:100%;font-size:13px;border-collapse:collapse;">' +
-        entries.map(([cat, val], i) => {
-          const pct = grandTotal > 0 ? (val / grandTotal * 100) : 0;
-          return '<tr style="border-bottom:0.5px solid var(--border);">' +
-            '<td style="padding:6px 0;"><span style="display:inline-block;width:10px;height:10px;background:' + palette[i] + ';border-radius:2px;margin-right:8px;vertical-align:middle;"></span>' + escapeHtml(cat) + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);padding:6px 8px;">' + Math.round(pct * 10) / 10 + '%</td>' +
-            '<td style="text-align:right;font-family:var(--font-mono);font-weight:500;padding:6px 0 6px 8px;">' + fmtTL(val) + '</td>' +
-          '</tr>';
-        }).join('') +
-        '</table>';
+      tableEl.innerHTML = rows.map(([cat, spent]) => {
+        const bud = num(budgets[cat]);
+        const remain = bud - spent;
+        const pctUsed = bud > 0 ? Math.min(100, Math.round(spent / bud * 100)) : 0;
+        const over = bud > 0 && spent > bud;
+        const barColor = over ? 'var(--danger-text)' : (pctUsed >= 80 ? 'var(--warning-text, #b8860b)' : 'var(--success-text)');
+        let row = '<div style="padding:9px 0;border-bottom:0.5px solid var(--border);">';
+        row += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">';
+        row += '<span style="font-size:13px;font-weight:500;">' + escapeHtml(cat) + '</span>';
+        row += '<span style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary);">harcanan: <b style="color:var(--text-primary);">' + fmtTL(spent) + '</b></span>';
+        row += '</div>';
+        if (bud > 0) {
+          row += '<div style="height:6px;border-radius:3px;background:var(--bg-secondary);overflow:hidden;margin:6px 0 4px;"><div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';"></div></div>';
+          row += '<div style="font-family:var(--font-mono);font-size:11px;color:' + (over ? 'var(--danger-text)' : 'var(--text-tertiary)') + ';">' +
+            fmtTL(spent) + ' / ' + fmtTL(bud) + ' · ' + (remain >= 0 ? fmtTL(remain) + ' kaldı' : fmtTL(-remain) + ' aşıldı') + '</div>';
+        }
+        if (editable) {
+          row += '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;">' +
+            '<span style="font-size:11px;color:var(--text-tertiary);">Bütçe:</span>' +
+            '<input type="text" inputmode="decimal" placeholder="— (bütçe yok)" value="' + (bud > 0 ? bud : '') + '" data-catbudget="' + escapeHtml(cat) + '" style="width:130px;font-size:13px;padding:4px 8px;">' +
+            '</div>';
+        }
+        row += '</div>';
+        return row;
+      }).join('');
+      if (totalBudget > 0) {
+        tableEl.innerHTML += '<div style="display:flex;justify-content:space-between;padding:10px 0 2px;font-size:13px;font-weight:600;">' +
+          '<span>Toplam bütçe</span><span style="font-family:var(--font-mono);color:var(--accent);">' + fmtTL(grandTotal) + ' / ' + fmtTL(totalBudget) + '</span></div>';
+      }
     }
+    // Yeni kategori bütçesi ekleme (bulunulan ay)
+    if (editable) {
+      const unbudgeted = SPEND_CATEGORIES.filter(c => !(num(budgets[c]) > 0));
+      if (unbudgeted.length > 0) {
+        tableEl.innerHTML += '<div style="display:flex;gap:6px;margin-top:12px;padding-top:10px;border-top:0.5px solid var(--border);">' +
+          '<select id="catbudget-new-cat" style="flex:1;font-size:13px;">' + unbudgeted.map(c => '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>').join('') + '</select>' +
+          '<input type="text" inputmode="decimal" id="catbudget-new-amt" placeholder="Bütçe ₺" style="width:110px;font-size:13px;">' +
+          '<button class="btn" id="catbudget-add" style="font-size:12px;">+ Ekle</button>' +
+          '</div>';
+      }
+    }
+    // Handler'lar
+    tableEl.querySelectorAll('[data-catbudget]').forEach(inp => {
+      inp.onchange = () => {
+        if (!state.categoryBudgets) state.categoryBudgets = {};
+        const cat = inp.dataset.catbudget;
+        const v = num(inp.value);
+        if (v > 0) state.categoryBudgets[cat] = v; else delete state.categoryBudgets[cat];
+        save();
+        renderCategoryReport();
+      };
+    });
+    const addBtn = $('catbudget-add');
+    if (addBtn) addBtn.onclick = () => {
+      const cat = $('catbudget-new-cat').value;
+      const amt = num($('catbudget-new-amt').value);
+      if (!cat || amt <= 0) { showToast('Kategori ve bütçe girin'); return; }
+      if (!state.categoryBudgets) state.categoryBudgets = {};
+      state.categoryBudgets[cat] = amt;
+      save();
+      renderCategoryReport();
+    };
   }
 
   // Trend grafiği (son 6 ay)
@@ -6539,6 +6579,10 @@ function attachInputs() {
       fresh.incomeAyten = num(lastMonth.incomeAyten);
       fresh.incomeAytenEk = 0; // ek ders her ay sıfırlanır
       fresh.income = fresh.incomeCagdas + fresh.incomeAyten;
+      // v7.3: kategori zarf bütçelerini yeni aya taşı
+      if (lastMonth.categoryBudgets && Object.keys(lastMonth.categoryBudgets).length > 0) {
+        fresh.categoryBudgets = { ...lastMonth.categoryBudgets };
+      }
       // Not: Kart devri artık canlı hesaplanıyor (getCardCarry) — yazma anında bir şey eklenmez.
 
       // v7.2: Tekrar eden (zarf bütçeli) kart harcamalarını yeni aya kopyala — bütçe korunur, harcanan sıfırlanır
@@ -6552,7 +6596,6 @@ function attachInputs() {
         if (!Array.isArray(card.monthlySpendsDetail[v])) card.monthlySpendsDetail[v] = [];
         recurItems.forEach(s => {
           const copy = { id: genId('SP'), category: s.category, amount: 0, note: s.note || '', recurring: true };
-          if (num(s.budget) > 0) copy.budget = num(s.budget);
           if (s.sub) copy.sub = s.sub;
           card.monthlySpendsDetail[v].push(copy);
         });
