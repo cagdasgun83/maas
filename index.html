@@ -8495,7 +8495,9 @@ function renderHomeBudget() {
   if (cats.length === 0) { card.style.display = 'none'; return; }
   card.style.display = '';
 
-  const totals = computeCategoryTotalsForMonth(currentId);
+  let totals = {};
+  try { totals = computeCategoryTotalsForMonth(currentId) || {}; }
+  catch (e) { console.warn('home budget totals:', e); totals = {}; }
   // Bütçeye göre sırala: en çok dolmuş (aşan/riskli) üstte
   const rows = cats.map(cat => {
     const bud = num(budgets[cat]);

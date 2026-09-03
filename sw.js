@@ -1,7 +1,7 @@
 // Maaş Günü v5.4.1 — Service Worker
 // Strateji: uygulama sayfası için ÖNCE AĞ (güncellemeler tek açılışta gelir),
 // internet yoksa önbellek (çevrimdışı çalışma korunur). Diğer dosyalar önbellek öncelikli.
-const CACHE = 'maas-gunu-v7.4.0';
+const CACHE = 'maas-gunu-v7.4.1';
 const SHELL = [
   './',
   'index.html',
