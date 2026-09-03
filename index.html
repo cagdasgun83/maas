@@ -4065,10 +4065,21 @@ function renderCards() {
           if (cardHasSubs(card) && curSub !== '' && (sp.sub || '') !== curSub) return;
           const editing = spendEditing.has(card.id + ':' + sp.id);
           if (!editing) {
+            const hasBudget = num(sp.budget) > 0;
+            const spent = num(sp.amount);
+            const budget = num(sp.budget);
+            const remain = budget - spent;
             html += '<div class="spend-compact" data-edit-spend="' + card.id + ':' + sp.id + '" style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);cursor:pointer;">';
             html += '<div style="flex:1;min-width:0;">';
-            html += '<div style="font-size:13px;font-weight:500;">' + escapeHtml(sp.category || 'Diğer') + (cardHasSubs(card) && curSub === '' && sp.sub ? ' <span style="font-size:10px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.sub) + '</span>' : '') + '</div>';
-            if (sp.note) html += '<div style="font-size:11px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(sp.note) + '</div>';
+            html += '<div style="font-size:13px;font-weight:500;">' + escapeHtml(sp.category || 'Diğer') + (sp.note ? ' <span style="font-size:11px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.note) + '</span>' : '') + (cardHasSubs(card) && curSub === '' && sp.sub ? ' <span style="font-size:10px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.sub) + '</span>' : '') + '</div>';
+            if (hasBudget) {
+              const pctUsed = budget > 0 ? Math.min(100, Math.round(spent / budget * 100)) : 0;
+              const barColor = spent > budget ? 'var(--danger-text)' : (pctUsed >= 80 ? 'var(--warning-text, #b8860b)' : 'var(--success-text)');
+              html += '<div style="margin-top:4px;">';
+              html += '<div style="height:5px;border-radius:3px;background:var(--bg-secondary);overflow:hidden;"><div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';"></div></div>';
+              html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px;font-family:var(--font-mono);">' + fmtTL(spent) + ' / ' + fmtTL(budget) + ' · ' + (remain >= 0 ? fmtTL(remain) + ' kaldı' : fmtTL(-remain) + ' aşıldı') + '</div>';
+              html += '</div>';
+            }
             html += '</div>';
             html += '<div style="font-size:13px;font-weight:500;font-family:var(--font-mono);white-space:nowrap;">' + fmtTL(num(sp.amount)) + '</div>';
             html += '<span style="color:var(--text-tertiary);font-size:15px;">\u203a</span>';
@@ -4077,11 +4088,13 @@ function renderCards() {
           }
           const catOptions = catOptionsHtml(sp.category);
           html += '<div class="spend-edit" style="padding:12px;background:var(--bg-card);border:1px solid var(--accent);border-radius:var(--radius-md);display:grid;gap:8px;">';
-          html += '<div class="qa-row2">';
           html += '<div><label class="field-label">Kategori</label><select data-ci="' + ci + '" data-si="' + si + '" data-k="spend-cat">' + catOptions + '</select></div>';
-          html += '<div><label class="field-label">Tutar (\u20ba)</label><input type="text" inputmode="decimal" placeholder="0" value="' + (sp.amount || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-amount" data-calc="1"></div>';
+          html += '<div class="qa-row2">';
+          html += '<div><label class="field-label">Harcanan (₺)</label><input type="text" inputmode="decimal" placeholder="0" value="' + (sp.amount || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-amount" data-calc="1"></div>';
+          html += '<div><label class="field-label">Aylık bütçe (₺, ops.)</label><input type="text" inputmode="decimal" placeholder="—" value="' + (sp.budget || '') + '" data-budget-spend="' + card.id + ':' + sp.id + '"></div>';
           html += '</div>';
           html += '<div><label class="field-label">Not</label><input type="text" placeholder="opsiyonel" value="' + escapeHtml(sp.note || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-note"></div>';
+          html += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;"><input type="checkbox" style="width:auto;" data-recur-spend="' + card.id + ':' + sp.id + '"' + (sp.recurring ? ' checked' : '') + '> Her ay tekrar et (yeni ayda bütçesiyle kopyalanır, harcama sıfırlanır)</label>';
           if (cardHasSubs(card)) {
             html += '<div><label class="field-label">Alt kart</label><select data-sub-spend="' + card.id + ':' + sp.id + '">' +
               '<option value="">(Tümü / etiketsiz)</option>' +
@@ -4524,6 +4537,30 @@ function renderCards() {
   });
   c.querySelectorAll('[data-done-spend]').forEach(b => {
     b.onclick = (e) => { e.stopPropagation(); spendEditing.delete(b.dataset.doneSpend); saveDebts(); renderCards(); updateMetrics(); };
+  });
+  // v7.2: zarf bütçesi + tekrar eden işareti
+  const findSpendById = (cardId, spId) => {
+    const card = debtsState.cards.find(x => x.id === cardId);
+    if (!card) return null;
+    for (const ym of Object.keys(card.monthlySpendsDetail || {})) {
+      const hit = (card.monthlySpendsDetail[ym] || []).find(s => s.id === spId);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  c.querySelectorAll('[data-budget-spend]').forEach(inp => {
+    inp.onchange = (e) => {
+      const [cardId, spId] = inp.dataset.budgetSpend.split(':');
+      const sp = findSpendById(cardId, spId);
+      if (sp) { const v = num(inp.value); if (v > 0) sp.budget = v; else delete sp.budget; saveDebts(); renderCards(); }
+    };
+  });
+  c.querySelectorAll('[data-recur-spend]').forEach(chk => {
+    chk.onchange = (e) => {
+      const [cardId, spId] = chk.dataset.recurSpend.split(':');
+      const sp = findSpendById(cardId, spId);
+      if (sp) { if (chk.checked) sp.recurring = true; else delete sp.recurring; saveDebts(); }
+    };
   });
   // Bu ay harcama: kategori detay satırı sil
   c.querySelectorAll('[data-rm-spend-c]').forEach(b => {
@@ -6503,6 +6540,25 @@ function attachInputs() {
       fresh.incomeAytenEk = 0; // ek ders her ay sıfırlanır
       fresh.income = fresh.incomeCagdas + fresh.incomeAyten;
       // Not: Kart devri artık canlı hesaplanıyor (getCardCarry) — yazma anında bir şey eklenmez.
+
+      // v7.2: Tekrar eden (zarf bütçeli) kart harcamalarını yeni aya kopyala — bütçe korunur, harcanan sıfırlanır
+      const prevYmForRecur = lastMonth.id;
+      let recurCopied = false;
+      debtsState.cards.forEach(card => {
+        const prevList = (card.monthlySpendsDetail && card.monthlySpendsDetail[prevYmForRecur]) || [];
+        const recurItems = prevList.filter(s => s.recurring);
+        if (recurItems.length === 0) return;
+        if (!card.monthlySpendsDetail) card.monthlySpendsDetail = {};
+        if (!Array.isArray(card.monthlySpendsDetail[v])) card.monthlySpendsDetail[v] = [];
+        recurItems.forEach(s => {
+          const copy = { id: genId('SP'), category: s.category, amount: 0, note: s.note || '', recurring: true };
+          if (num(s.budget) > 0) copy.budget = num(s.budget);
+          if (s.sub) copy.sub = s.sub;
+          card.monthlySpendsDetail[v].push(copy);
+        });
+        recurCopied = true;
+      });
+      if (recurCopied) saveDebts();
     }
     await dbPut(fresh);
     currentId = v;
