@@ -3231,7 +3231,7 @@ async function loadDebts() {
 
 // Belirli ay için kart harcamasını getir (toplam TL)
 function getCardSpend(card, ym) {
-  // Yeni yapı: detay listesinden topla
+  // Detay listesinden gerçek harcamaları topla
   if (card.monthlySpendsDetail && Array.isArray(card.monthlySpendsDetail[ym])) {
     return card.monthlySpendsDetail[ym].reduce((a, s) => a + num(s.amount), 0);
   }
