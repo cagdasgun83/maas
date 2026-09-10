@@ -3230,10 +3230,24 @@ async function loadDebts() {
 }
 
 // Belirli ay için kart harcamasını getir (toplam TL)
+// v7.6: Planlı zarf kalemi — fiili harcamalar sp.entries[] içinde birikir.
+// Karta yansıyan = max(plan, fiili toplam). Plan yoksa normal sp.amount.
+function spendActual(sp) {
+  if (Array.isArray(sp.entries) && sp.entries.length > 0) {
+    return sp.entries.reduce((a, e) => a + num(e.amount), 0);
+  }
+  return num(sp.amount);
+}
+function spendEffective(sp) {
+  const actual = spendActual(sp);
+  if (num(sp.planned) > 0) return Math.max(num(sp.planned), actual);
+  return actual;
+}
+
 function getCardSpend(card, ym) {
-  // Detay listesinden gerçek harcamaları topla
+  // Detay listesinden gerçek/efektif harcamaları topla
   if (card.monthlySpendsDetail && Array.isArray(card.monthlySpendsDetail[ym])) {
-    return card.monthlySpendsDetail[ym].reduce((a, s) => a + num(s.amount), 0);
+    return card.monthlySpendsDetail[ym].reduce((a, s) => a + spendEffective(s), 0);
   }
   // Eski yapı fallback
   if (!card.monthlySpends) return 0;
@@ -4074,23 +4088,65 @@ function renderCards() {
           if (cardHasSubs(card) && curSub !== '' && (sp.sub || '') !== curSub) return;
           const editing = spendEditing.has(card.id + ':' + sp.id);
           if (!editing) {
+            const isPlanned = num(sp.planned) > 0;
+            const actual = spendActual(sp);
+            const eff = spendEffective(sp);
             html += '<div class="spend-compact" data-edit-spend="' + card.id + ':' + sp.id + '" style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);cursor:pointer;">';
             html += '<div style="flex:1;min-width:0;">';
             html += '<div style="font-size:13px;font-weight:500;">' + escapeHtml(sp.category || 'Diğer') + (sp.note ? ' <span style="font-size:11px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.note) + '</span>' : '') + (cardHasSubs(card) && curSub === '' && sp.sub ? ' <span style="font-size:10px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.sub) + '</span>' : '') + '</div>';
+            if (isPlanned) {
+              const over = actual > num(sp.planned);
+              const pctUsed = num(sp.planned) > 0 ? Math.min(100, Math.round(actual / num(sp.planned) * 100)) : 0;
+              const barColor = over ? 'var(--danger-text)' : (pctUsed >= 80 ? 'var(--warning-text, #b8860b)' : 'var(--success-text)');
+              const cnt = Array.isArray(sp.entries) ? sp.entries.length : 0;
+              html += '<div style="margin-top:4px;">';
+              html += '<div style="height:5px;border-radius:3px;background:var(--bg-secondary);overflow:hidden;"><div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';"></div></div>';
+              html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px;font-family:var(--font-mono);">fiili ' + fmtTL(actual) + ' / plan ' + fmtTL(num(sp.planned)) + ' · ' + cnt + ' giriş' + (over ? ' · plan aşıldı' : '') + '</div>';
+              html += '</div>';
+            }
             html += '</div>';
-            html += '<div style="font-size:13px;font-weight:500;font-family:var(--font-mono);white-space:nowrap;">' + fmtTL(num(sp.amount)) + '</div>';
+            html += '<div style="font-size:13px;font-weight:500;font-family:var(--font-mono);white-space:nowrap;' + (isPlanned && eff !== actual ? 'color:var(--accent);' : '') + '">' + fmtTL(eff) + '</div>';
             html += '<span style="color:var(--text-tertiary);font-size:15px;">\u203a</span>';
             html += '</div>';
             return;
           }
           const catOptions = catOptionsHtml(sp.category);
+          const isPlannedEdit = num(sp.planned) > 0;
           html += '<div class="spend-edit" style="padding:12px;background:var(--bg-card);border:1px solid var(--accent);border-radius:var(--radius-md);display:grid;gap:8px;">';
-          html += '<div class="qa-row2">';
           html += '<div><label class="field-label">Kategori</label><select data-ci="' + ci + '" data-si="' + si + '" data-k="spend-cat">' + catOptions + '</select></div>';
-          html += '<div><label class="field-label">Tutar (₺)</label><input type="text" inputmode="decimal" placeholder="0" value="' + (sp.amount || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-amount" data-calc="1"></div>';
-          html += '</div>';
-          html += '<div><label class="field-label">Not</label><input type="text" placeholder="opsiyonel" value="' + escapeHtml(sp.note || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-note"></div>';
-          html += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;"><input type="checkbox" style="width:auto;" data-recur-spend="' + card.id + ':' + sp.id + '"' + (sp.recurring ? ' checked' : '') + '> Her ay tekrar et (yeni ayda kopyalanır, tutar sıfırlanır)</label>';
+          // Planlı zarf mı?
+          html += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;"><input type="checkbox" style="width:auto;" data-planmode-spend="' + card.id + ':' + sp.id + '"' + (isPlannedEdit ? ' checked' : '') + '> Planlı kalem (baştan bütçe göster, harcadıkça gir)</label>';
+          if (isPlannedEdit) {
+            html += '<div><label class="field-label">Planlanan tutar (₺)</label><input type="text" inputmode="decimal" placeholder="örn. 20000" value="' + (sp.planned || '') + '" data-planned-spend="' + card.id + ':' + sp.id + '"></div>';
+            // Fiili harcama girişleri
+            const entries = Array.isArray(sp.entries) ? sp.entries : [];
+            const actual = spendActual(sp);
+            html += '<div style="border-top:0.5px solid var(--border);padding-top:8px;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+              '<span style="font-size:12px;color:var(--text-tertiary);">Harcama girişleri (' + entries.length + ')</span>' +
+              '<span style="font-family:var(--font-mono);font-size:12px;font-weight:500;">fiili: ' + fmtTL(actual) + '</span></div>';
+            if (entries.length > 0) {
+              html += '<div style="display:grid;gap:4px;margin-bottom:8px;">';
+              entries.forEach((e, ei) => {
+                html += '<div style="display:flex;align-items:center;gap:8px;font-size:12px;background:var(--bg-secondary);border-radius:var(--radius-md);padding:5px 8px;">' +
+                  '<span style="flex:1;font-family:var(--font-mono);">' + fmtTL(num(e.amount)) + '</span>' +
+                  (e.note ? '<span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;">' + escapeHtml(e.note) + '</span>' : '') +
+                  '<button class="row-x" data-rm-entry="' + card.id + ':' + sp.id + ':' + ei + '" style="width:22px;height:22px;font-size:13px;">×</button>' +
+                  '</div>';
+              });
+              html += '</div>';
+            }
+            html += '<div style="display:flex;gap:6px;">' +
+              '<input type="text" inputmode="decimal" placeholder="Harcama ₺" data-entry-amt="' + card.id + ':' + sp.id + '" style="flex:1;font-size:13px;">' +
+              '<input type="text" placeholder="Not (ops.)" data-entry-note="' + card.id + ':' + sp.id + '" style="flex:1;font-size:13px;">' +
+              '<button class="btn btn-primary" data-add-entry="' + card.id + ':' + sp.id + '" style="font-size:12px;padding:6px 12px;">Ekle</button>' +
+              '</div>';
+            html += '</div>';
+          } else {
+            html += '<div><label class="field-label">Tutar (₺)</label><input type="text" inputmode="decimal" placeholder="0" value="' + (sp.amount || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-amount" data-calc="1"></div>';
+          }
+          html += '<div><label class="field-label">Not / açıklama</label><input type="text" placeholder="opsiyonel" value="' + escapeHtml(sp.note || '') + '" data-ci="' + ci + '" data-si="' + si + '" data-k="spend-note"></div>';
+          html += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;"><input type="checkbox" style="width:auto;" data-recur-spend="' + card.id + ':' + sp.id + '"' + (sp.recurring ? ' checked' : '') + '> Her ay tekrar et (yeni ayda kopyalanır, harcamalar sıfırlanır)</label>';
           if (cardHasSubs(card)) {
             html += '<div><label class="field-label">Alt kart</label><select data-sub-spend="' + card.id + ':' + sp.id + '">' +
               '<option value="">(Tümü / etiketsiz)</option>' +
@@ -4552,6 +4608,56 @@ function renderCards() {
       if (sp) { if (chk.checked) sp.recurring = true; else delete sp.recurring; saveDebts(); }
     };
   });
+  // v7.6: planlı zarf modu aç/kapa
+  c.querySelectorAll('[data-planmode-spend]').forEach(chk => {
+    chk.onchange = (e) => {
+      const [cardId, spId] = chk.dataset.planmodeSpend.split(':');
+      const sp = findSpendById(cardId, spId);
+      if (!sp) return;
+      if (chk.checked) {
+        if (!num(sp.planned)) sp.planned = num(sp.amount) || 0;
+        if (!Array.isArray(sp.entries)) sp.entries = [];
+        // mevcut amount'u ilk giriş yap
+        if (num(sp.amount) > 0 && sp.entries.length === 0) { sp.entries.push({ amount: num(sp.amount), note: '' }); sp.amount = 0; }
+      } else {
+        // plan modundan çık: fiili toplamı amount'a yaz, plan/entries kaldır
+        sp.amount = spendActual(sp);
+        delete sp.planned; delete sp.entries;
+      }
+      saveDebts(); renderCards(); updateMetrics();
+    };
+  });
+  c.querySelectorAll('[data-planned-spend]').forEach(inp => {
+    inp.onchange = (e) => {
+      const [cardId, spId] = inp.dataset.plannedSpend.split(':');
+      const sp = findSpendById(cardId, spId);
+      if (sp) { const v = num(inp.value); if (v > 0) sp.planned = v; else delete sp.planned; saveDebts(); renderCards(); updateMetrics(); }
+    };
+  });
+  c.querySelectorAll('[data-add-entry]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const [cardId, spId] = b.dataset.addEntry.split(':');
+      const sp = findSpendById(cardId, spId);
+      if (!sp) return;
+      const amtEl = c.querySelector('[data-entry-amt="' + cardId + ':' + spId + '"]');
+      const noteEl = c.querySelector('[data-entry-note="' + cardId + ':' + spId + '"]');
+      const amt = num(amtEl ? amtEl.value : 0);
+      if (amt <= 0) { showToast('Harcama tutarı girin'); return; }
+      if (!Array.isArray(sp.entries)) sp.entries = [];
+      sp.entries.push({ amount: amt, note: noteEl ? noteEl.value.trim() : '' });
+      saveDebts(); renderCards(); updateMetrics();
+      checkBudgetWarning(sp.category);
+    };
+  });
+  c.querySelectorAll('[data-rm-entry]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const [cardId, spId, ei] = b.dataset.rmEntry.split(':');
+      const sp = findSpendById(cardId, spId);
+      if (sp && Array.isArray(sp.entries)) { sp.entries.splice(+ei, 1); saveDebts(); renderCards(); updateMetrics(); }
+    };
+  });
   // Bu ay harcama: kategori detay satırı sil
   c.querySelectorAll('[data-rm-spend-c]').forEach(b => {
     b.onclick = (e) => {
@@ -4883,7 +4989,7 @@ function computeCategoryTotalsForMonth(ym) {
     spends.forEach(sp => {
       const cat = sp.category || 'Diğer';
       if (totals[cat] === undefined) totals[cat] = 0;
-      totals[cat] += num(sp.amount);
+      totals[cat] += spendEffective(sp);
     });
     // Aktif taksitlerin aylık dilimi
     (card.installments || []).forEach(inst => {
@@ -6606,6 +6712,7 @@ function attachInputs() {
         if (!Array.isArray(card.monthlySpendsDetail[v])) card.monthlySpendsDetail[v] = [];
         recurItems.forEach(s => {
           const copy = { id: genId('SP'), category: s.category, amount: 0, note: s.note || '', recurring: true };
+          if (num(s.planned) > 0) { copy.planned = num(s.planned); copy.entries = []; }
           if (s.sub) copy.sub = s.sub;
           card.monthlySpendsDetail[v].push(copy);
         });
