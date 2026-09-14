@@ -658,6 +658,14 @@ input[type="number"]::-webkit-inner-spin-button {
   border: 1px dashed var(--border-strong);
 }
 .color-swatch.color-none.selected { border-color: var(--text-primary); border-style: solid; }
+.fold-caret {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  transition: transform 0.15s;
+  margin-right: 2px;
+}
+.section-fold.folded .fold-caret { transform: rotate(-90deg); }
 .debt-tick {
   width: 20px;
   height: 20px;
@@ -2117,36 +2125,41 @@ input[type="number"]::-webkit-inner-spin-button {
     <div id="debts-view-cards">
     <!-- Kredi Kartları -->
     <div class="card">
-      <p class="card-title">Kredi kartları
+      <p class="card-title section-fold" data-fold="cards" style="cursor:pointer;"><span class="fold-caret" data-fold-caret="cards">▾</span> Kredi kartları
         <span style="float:right;font-family:var(--font-sans);font-size:11px;color:var(--text-tertiary);text-transform:none;letter-spacing:0;">
-          <button class="btn-ghost btn" id="btn-collapse-all-cards" style="font-size:11px;padding:2px 8px;height:auto;">Tümünü kapat</button>
-          <button class="btn-ghost btn" id="btn-expand-all-cards" style="font-size:11px;padding:2px 8px;height:auto;">Tümünü aç</button>
+          <button class="btn-ghost btn" id="btn-collapse-all-cards" style="font-size:11px;padding:2px 8px;height:auto;" onclick="event.stopPropagation();">Tümünü kapat</button>
+          <button class="btn-ghost btn" id="btn-expand-all-cards" style="font-size:11px;padding:2px 8px;height:auto;" onclick="event.stopPropagation();">Tümünü aç</button>
         </span>
       </p>
-      <div id="cards-summary" class="debt-summary"></div>
-      <div id="cards-container"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn-add" id="add-card">+ Yeni kart ekle</button>
-        <button class="btn" id="btn-manage-cats" style="font-size:12px;">⚙ Kategorileri yönet</button>
+      <div data-fold-body="cards">
+        <div id="cards-summary" class="debt-summary"></div>
+        <div id="cards-container"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-add" id="add-card">+ Yeni kart ekle</button>
+          <button class="btn" id="btn-manage-cats" style="font-size:12px;">⚙ Kategorileri yönet</button>
+        </div>
       </div>
     </div>
 
     <!-- Krediler -->
     <div class="card">
-      <p class="card-title">Krediler (ev, tüketici)
+      <p class="card-title section-fold" data-fold="loans" style="cursor:pointer;"><span class="fold-caret" data-fold-caret="loans">▾</span> Krediler (ev, tüketici)
         <span style="float:right;font-family:var(--font-sans);font-size:11px;color:var(--text-tertiary);text-transform:none;letter-spacing:0;">
-          <button class="btn-ghost btn" id="btn-collapse-all-loans" style="font-size:11px;padding:2px 8px;height:auto;">Tümünü kapat</button>
-          <button class="btn-ghost btn" id="btn-expand-all-loans" style="font-size:11px;padding:2px 8px;height:auto;">Tümünü aç</button>
+          <button class="btn-ghost btn" id="btn-collapse-all-loans" style="font-size:11px;padding:2px 8px;height:auto;" onclick="event.stopPropagation();">Tümünü kapat</button>
+          <button class="btn-ghost btn" id="btn-expand-all-loans" style="font-size:11px;padding:2px 8px;height:auto;" onclick="event.stopPropagation();">Tümünü aç</button>
         </span>
       </p>
-      <div id="loans-summary" class="debt-summary"></div>
-      <div id="loans-container"></div>
-      <button class="btn-add" id="add-loan">+ Yeni kredi ekle</button>
+      <div data-fold-body="loans">
+        <div id="loans-summary" class="debt-summary"></div>
+        <div id="loans-container"></div>
+        <button class="btn-add" id="add-loan">+ Yeni kredi ekle</button>
+      </div>
     </div>
 
     <!-- v5.3: Ödeme hatırlatıcıları -->
     <div class="card">
-      <p class="card-title">Ödeme hatırlatıcıları</p>
+      <p class="card-title section-fold" data-fold="rem" style="cursor:pointer;"><span class="fold-caret" data-fold-caret="rem">▾</span> Ödeme hatırlatıcıları</p>
+      <div data-fold-body="rem">
       <p class="section-subtitle" style="margin-bottom:10px;">Kart ve kredileriniz için son ödeme gününü seçin; iPhone Takvim'e abone edin, ödeme günleri yaklaşınca telefon bildirim göndersin. Veri değişince "Takvimi güncelle"ye basmanız yeterli.</p>
       <div id="rem-container"></div>
       <button class="btn-add" id="add-custom-payment">+ Diğer ödeme ekle (aidat, fatura…)</button>
@@ -2185,6 +2198,7 @@ input[type="number"]::-webkit-inner-spin-button {
         </div>
         <p style="font-size:12px;margin-top:8px;">Tek seferlik kurulum — iPhone'da: <b>Ayarlar → Takvim → Hesaplar → Hesap Ekle → Diğer → Abone Olunan Takvim Ekle</b> → adresi yapıştır → Kaydet. (Yeni iOS'ta: Ayarlar → Uygulamalar → Takvim.) Sonrasında bu listede yaptığınız değişiklikler "Takvimi güncelle" ile telefona kendiliğinden yansır.</p>
       </div>
+      </div><!-- /fold-body rem -->
     </div>
 
     <div class="metrics">
@@ -6622,6 +6636,18 @@ function attachInputs() {
   if ($('cat-close')) $('cat-close').onclick = closeCatModal;
   if ($('cat-new')) $('cat-new').addEventListener('keydown', e => { if (e.key === 'Enter') addCustomCat(); });
   if ($('btn-manage-cats')) $('btn-manage-cats').onclick = openCatModal;
+  // v7.9: bölüm katlama (Kredi kartları / Krediler / Ödeme hatırlatıcıları)
+  document.querySelectorAll('.section-fold[data-fold]').forEach(title => {
+    const key = title.dataset.fold;
+    const body = document.querySelector('[data-fold-body="' + key + '"]');
+    const folded = localStorage.getItem('mg-fold-' + key) === '1';
+    if (folded) { title.classList.add('folded'); if (body) body.style.display = 'none'; }
+    title.addEventListener('click', () => {
+      const isFolded = title.classList.toggle('folded');
+      if (body) body.style.display = isFolded ? 'none' : '';
+      localStorage.setItem('mg-fold-' + key, isFolded ? '1' : '0');
+    });
+  });
   $('add-card').onclick = () => {
     const newCard = { id: genId('CARD'), name: '', monthlySpends: {}, installments: [] };
     debtsState.cards.push(newCard);
