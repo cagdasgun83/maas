@@ -3238,10 +3238,34 @@ function spendActual(sp) {
   }
   return num(sp.amount);
 }
+// v7.8: Belirli alt karta ait fiili (planlı kalemde girişlerin o alt karttaki toplamı)
+function spendActualForSub(sp, subName) {
+  if (Array.isArray(sp.entries) && sp.entries.length > 0) {
+    return sp.entries.filter(e => (e.sub || '') === subName).reduce((a, e) => a + num(e.amount), 0);
+  }
+  // Girişsiz (normal) kalem: kalemin kendi sub'ı eşleşiyorsa tamamı, değilse 0
+  return (sp.sub || '') === subName ? num(sp.amount) : 0;
+}
 function spendEffective(sp) {
   const actual = spendActual(sp);
   if (num(sp.planned) > 0) return Math.max(num(sp.planned), actual);
   return actual;
+}
+// v7.8: bir harcama, seçili alt kart filtresinde görünmeli mi?
+function spendVisibleUnderSub(sp, subName) {
+  if (subName === '') return true;
+  // Planlı + girişli kalem: o alt karta ait girişi varsa görünür (ortak plan)
+  if (num(sp.planned) > 0 && Array.isArray(sp.entries)) {
+    return sp.entries.some(e => (e.sub || '') === subName);
+  }
+  return (sp.sub || '') === subName;
+}
+// v7.8: filtreye göre gösterilecek tutar (planlı kalemde o alt kartın giriş toplamı; yoksa efektif)
+function spendDisplayAmount(sp, subName) {
+  if (subName !== '' && num(sp.planned) > 0 && Array.isArray(sp.entries)) {
+    return spendActualForSub(sp, subName);
+  }
+  return spendEffective(sp);
 }
 
 function getCardSpend(card, ym) {
@@ -3273,9 +3297,12 @@ function activeSub(card) {
 }
 // Bir alt kart adının o ay harcama toplamı
 function subSpendTotal(card, ym, subName) {
-  return getCardSpendDetails(card, ym)
-    .filter(s => (s.sub || '') === subName)
-    .reduce((a, s) => a + spendEffective(s), 0);
+  return getCardSpendDetails(card, ym).reduce((a, s) => {
+    if (num(s.planned) > 0 && Array.isArray(s.entries)) {
+      return a + spendActualForSub(s, subName); // planlı: o alt karta ait girişler
+    }
+    return a + ((s.sub || '') === subName ? spendEffective(s) : 0);
+  }, 0);
 }
 // Bir alt kartın o ay aktif taksit dilimi toplamı
 function subInstTotal(card, ym, subName) {
@@ -4081,9 +4108,9 @@ function renderCards() {
       // Bu ay harcama — kategori detay listesi
       const spends = getCardSpendDetails(card, currentId);
       const spendsVisible = cardHasSubs(card) && curSub !== ''
-        ? spends.filter(s => (s.sub || '') === curSub)
+        ? spends.filter(s => spendVisibleUnderSub(s, curSub))
         : spends;
-      const spendTotal = spendsVisible.reduce((a, s) => a + spendEffective(s), 0);
+      const spendTotal = spendsVisible.reduce((a, s) => a + spendDisplayAmount(s, cardHasSubs(card) ? curSub : ''), 0);
       const spendKey = card.id + ':spend';
       const spendOpen = sectionOpen.has(spendKey);
       html += '<div style="border-top:0.5px solid var(--border);padding-top:10px;margin-bottom:14px;">';
@@ -4098,23 +4125,24 @@ function renderCards() {
       } else {
         html += '<div style="display:grid;gap:6px;margin-bottom:8px;">';
         spends.forEach((sp, si) => {
-          if (cardHasSubs(card) && curSub !== '' && (sp.sub || '') !== curSub) return;
+          if (cardHasSubs(card) && curSub !== '' && !spendVisibleUnderSub(sp, curSub)) return;
           const editing = spendEditing.has(card.id + ':' + sp.id);
           if (!editing) {
             const isPlanned = num(sp.planned) > 0;
-            const actual = spendActual(sp);
-            const eff = spendEffective(sp);
+            const filtering = cardHasSubs(card) && curSub !== '';
+            const actual = filtering && isPlanned ? spendActualForSub(sp, curSub) : spendActual(sp);
+            const eff = filtering ? spendDisplayAmount(sp, curSub) : spendEffective(sp);
             html += '<div class="spend-compact" data-edit-spend="' + card.id + ':' + sp.id + '" style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);cursor:pointer;">';
             html += '<div style="flex:1;min-width:0;">';
             html += '<div style="font-size:13px;font-weight:500;">' + escapeHtml(sp.category || 'Diğer') + (sp.note ? ' <span style="font-size:11px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.note) + '</span>' : '') + (cardHasSubs(card) && curSub === '' && sp.sub ? ' <span style="font-size:10px;color:var(--text-tertiary);font-weight:400;">· ' + escapeHtml(sp.sub) + '</span>' : '') + '</div>';
             if (isPlanned) {
-              const over = actual > num(sp.planned);
-              const pctUsed = num(sp.planned) > 0 ? Math.min(100, Math.round(actual / num(sp.planned) * 100)) : 0;
+              const over = spendActual(sp) > num(sp.planned);
+              const pctUsed = num(sp.planned) > 0 ? Math.min(100, Math.round(spendActual(sp) / num(sp.planned) * 100)) : 0;
               const barColor = over ? 'var(--danger-text)' : (pctUsed >= 80 ? 'var(--warning-text, #b8860b)' : 'var(--success-text)');
-              const cnt = Array.isArray(sp.entries) ? sp.entries.length : 0;
+              const cnt = Array.isArray(sp.entries) ? (filtering ? sp.entries.filter(e => (e.sub || '') === curSub).length : sp.entries.length) : 0;
               html += '<div style="margin-top:4px;">';
               html += '<div style="height:5px;border-radius:3px;background:var(--bg-secondary);overflow:hidden;"><div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';"></div></div>';
-              html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px;font-family:var(--font-mono);">fiili ' + fmtTL(actual) + ' / plan ' + fmtTL(num(sp.planned)) + ' · ' + cnt + ' giriş' + (over ? ' · plan aşıldı' : '') + '</div>';
+              html += '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px;font-family:var(--font-mono);">' + (filtering ? escapeHtml(curSub) + ' ' + fmtTL(actual) + ' · ' : '') + 'fiili ' + fmtTL(spendActual(sp)) + ' / plan ' + fmtTL(num(sp.planned)) + ' · ' + cnt + ' giriş' + (over ? ' · plan aşıldı' : '') + '</div>';
               html += '</div>';
             }
             html += '</div>';
@@ -4142,16 +4170,19 @@ function renderCards() {
               html += '<div style="display:grid;gap:4px;margin-bottom:8px;">';
               entries.forEach((e, ei) => {
                 html += '<div style="display:flex;align-items:center;gap:8px;font-size:12px;background:var(--bg-secondary);border-radius:var(--radius-md);padding:5px 8px;">' +
-                  '<span style="flex:1;font-family:var(--font-mono);">' + fmtTL(num(e.amount)) + '</span>' +
-                  (e.note ? '<span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;">' + escapeHtml(e.note) + '</span>' : '') +
+                  '<span style="flex:1;font-family:var(--font-mono);">' + fmtTL(num(e.amount)) + (e.sub ? ' <span style="color:var(--text-tertiary);font-family:var(--font-sans);">· ' + escapeHtml(e.sub) + '</span>' : '') + '</span>' +
+                  (e.note ? '<span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">' + escapeHtml(e.note) + '</span>' : '') +
                   '<button class="row-x" data-rm-entry="' + card.id + ':' + sp.id + ':' + ei + '" style="width:22px;height:22px;font-size:13px;">×</button>' +
                   '</div>';
               });
               html += '</div>';
             }
-            html += '<div style="display:flex;gap:6px;">' +
-              '<input type="text" inputmode="decimal" placeholder="Harcama ₺" data-entry-amt="' + card.id + ':' + sp.id + '" style="flex:1;font-size:13px;">' +
-              '<input type="text" placeholder="Not (ops.)" data-entry-note="' + card.id + ':' + sp.id + '" style="flex:1;font-size:13px;">' +
+            html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+              '<input type="text" inputmode="decimal" placeholder="Harcama ₺" data-entry-amt="' + card.id + ':' + sp.id + '" style="flex:1;min-width:90px;font-size:13px;">' +
+              '<input type="text" placeholder="Not (ops.)" data-entry-note="' + card.id + ':' + sp.id + '" style="flex:1;min-width:90px;font-size:13px;">' +
+              (cardHasSubs(card)
+                ? '<select data-entry-sub="' + card.id + ':' + sp.id + '" style="font-size:13px;"><option value="">(alt kart yok)</option>' + card.subcards.map(sn => '<option value="' + escapeHtml(sn) + '"' + (curSub === sn ? ' selected' : '') + '>' + escapeHtml(sn) + '</option>').join('') + '</select>'
+                : '') +
               '<button class="btn btn-primary" data-add-entry="' + card.id + ':' + sp.id + '" style="font-size:12px;padding:6px 12px;">Ekle</button>' +
               '</div>';
             html += '</div>';
@@ -4672,10 +4703,13 @@ function renderCards() {
       if (!sp) return;
       const amtEl = c.querySelector('[data-entry-amt="' + cardId + ':' + spId + '"]');
       const noteEl = c.querySelector('[data-entry-note="' + cardId + ':' + spId + '"]');
+      const subEl = c.querySelector('[data-entry-sub="' + cardId + ':' + spId + '"]');
       const amt = num(amtEl ? amtEl.value : 0);
       if (amt <= 0) { showToast('Harcama tutarı girin'); return; }
       if (!Array.isArray(sp.entries)) sp.entries = [];
-      sp.entries.push({ amount: amt, note: noteEl ? noteEl.value.trim() : '' });
+      const entry = { amount: amt, note: noteEl ? noteEl.value.trim() : '' };
+      if (subEl && subEl.value) entry.sub = subEl.value;
+      sp.entries.push(entry);
       saveDebts(); renderCards(); updateMetrics();
       checkBudgetWarning(sp.category);
     };
