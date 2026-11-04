@@ -3534,6 +3534,12 @@ function formatMonth(id) {
 const $ = id => document.getElementById(id);
 const fmtTL = v => '₺' + Math.round(v || 0).toLocaleString('tr-TR');
 const fmtPct = v => Math.round(v || 0) + '%';
+// 'YYYY-MM-DD' -> 'GG.AA' kısa gösterim (giriş listesi için)
+const fmtDateShort = s => {
+  if (!s || typeof s !== 'string') return '';
+  const p = s.split('-');
+  return p.length >= 3 ? (p[2] + '.' + p[1]) : s;
+};
 const num = v => +v || 0;
 
 // Hesap makinesi parser — "+" / "-" işlemlerini destekler
@@ -4185,6 +4191,8 @@ function renderCards() {
             }
             // Fiili harcama girişleri
             const entries = entriesArr;
+            // Girişleri tarihe göre sırala (tarihsiz eski kayıtlar en üstte kalsın)
+            entries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
             const actual = spendActual(sp);
             html += '<div style="border-top:0.5px solid var(--border);padding-top:8px;">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
@@ -4194,14 +4202,17 @@ function renderCards() {
               html += '<div style="display:grid;gap:4px;margin-bottom:8px;">';
               entries.forEach((e, ei) => {
                 html += '<div style="display:flex;align-items:center;gap:8px;font-size:12px;background:var(--bg-secondary);border-radius:var(--radius-md);padding:5px 8px;">' +
+                  (e.date ? '<span style="color:var(--text-tertiary);font-family:var(--font-mono);font-size:11px;min-width:42px;">' + fmtDateShort(e.date) + '</span>' : '<span style="min-width:42px;"></span>') +
                   '<span style="flex:1;font-family:var(--font-mono);">' + fmtTL(num(e.amount)) + (e.sub ? ' <span style="color:var(--text-tertiary);font-family:var(--font-sans);">· ' + escapeHtml(e.sub) + '</span>' : '') + '</span>' +
-                  (e.note ? '<span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">' + escapeHtml(e.note) + '</span>' : '') +
+                  (e.note ? '<span style="color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:90px;">' + escapeHtml(e.note) + '</span>' : '') +
                   '<button class="row-x" data-rm-entry="' + card.id + ':' + sp.id + ':' + ei + '" style="width:22px;height:22px;font-size:13px;">×</button>' +
                   '</div>';
               });
               html += '</div>';
             }
+            const entryToday = (function(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); })();
             html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+              '<input type="date" value="' + entryToday + '" data-entry-date="' + card.id + ':' + sp.id + '" style="font-size:13px;min-width:130px;">' +
               '<input type="text" inputmode="decimal" placeholder="Harcama ₺" data-entry-amt="' + card.id + ':' + sp.id + '" style="flex:1;min-width:90px;font-size:13px;">' +
               '<input type="text" placeholder="Not (ops.)" data-entry-note="' + card.id + ':' + sp.id + '" style="flex:1;min-width:90px;font-size:13px;">' +
               (cardHasSubs(card)
@@ -4745,11 +4756,13 @@ function renderCards() {
       const amtEl = c.querySelector('[data-entry-amt="' + cardId + ':' + spId + '"]');
       const noteEl = c.querySelector('[data-entry-note="' + cardId + ':' + spId + '"]');
       const subEl = c.querySelector('[data-entry-sub="' + cardId + ':' + spId + '"]');
+      const dateEl = c.querySelector('[data-entry-date="' + cardId + ':' + spId + '"]');
       const amt = num(amtEl ? amtEl.value : 0);
       if (amt <= 0) { showToast('Harcama tutarı girin'); return; }
       if (!Array.isArray(sp.entries)) sp.entries = [];
       const entry = { amount: amt, note: noteEl ? noteEl.value.trim() : '' };
       if (subEl && subEl.value) entry.sub = subEl.value;
+      if (dateEl && dateEl.value) entry.date = dateEl.value;
       sp.entries.push(entry);
       saveDebts(); renderCards(); updateMetrics();
       checkBudgetWarning(sp.category);
